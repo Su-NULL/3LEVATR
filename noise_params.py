@@ -9,7 +9,7 @@ verbose = 1
 
 # Main processes on/off
 cratering_on = 1
-secondaries_on = 0
+secondaries_on = 1
 diffusion_on = 1
 implicit_diffusion = 1
 explicit_diffusion = 0
@@ -28,11 +28,11 @@ dy2 = resolution**2
 # Miscellany
 min_crater = 2.0*resolution
 continuous_ejecta_blanket_factor = 3.0	# Ejecta blanket extends to 3 crater radii
-max_secondary_factor = 0.05	# Largest secondary is 5% of primary
+max_secondary_factor = 0.04 # Largest secondary is 5% of primary
 
-min_primary_for_secondaries = 2.0*resolution/(max_secondary_factor)	# Smallest primary that can produce a resolvable secondary
+min_primary_for_secondaries = (10.0*min_crater)/(max_secondary_factor)	# Smallest primary that can produce a resolvable secondary
 
 diffusivity = []
-model_time = []
-dt = []
-nsteps = []
+model_time = 3.5e9
+dt = model_time/100.0
+nsteps = int(model_time/dt)

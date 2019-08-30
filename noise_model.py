@@ -19,6 +19,10 @@ from scipy import interpolate
 import uuid
 
 np.random.seed(np.random.randint(10000) + int(sys.argv[2]))
+
+######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
+
+
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 # Grid class
 class Grid:
@@ -62,7 +66,7 @@ class Grid:
 		A_edge = self.A_edge
 		N = self.grid_size
 
-		itr_max = 5
+		itr_max = 6
 		grid_inter = grid_old.copy()
 
 		itr = 0
@@ -145,14 +149,8 @@ class Grid:
 
 		radius = diameter/2.0
 
-		if primary_index == 1.0:
-			depth = 0.2*diameter
-		elif primary_index == 0.0:
-			depth = 0.11*diameter
-		elif primary_index == 2.0:
-			depth = 0.13*diameter
-
-		rim_height = depth/5.0
+		depth = (269.0/81.0)*(0.04*diameter)*primary_index
+		rim_height = 0.04*diameter*primary_index
 
 		r_ejecta = params.continuous_ejecta_blanket_factor*radius
 
@@ -190,7 +188,7 @@ class Grid:
 			E_r = np.zeros((grid_size, grid_size))
 
 		# Crater elevation profile
-		delta_H_crater = (( ( ( (dx)**2 + (dy)**2 ) * (rim_height + depth) ) / radius**2 ) - depth)
+		delta_H_crater = (((np.hypot(dx, dy)/radius)**2)*(rim_height + depth)) - depth
 
 		# Ejecta elevation profile
 		with np.errstate(divide='ignore'):    # Divide by zero at r=0 but we don't care about that point since it's interior to the ejecta blanket
@@ -495,7 +493,7 @@ class ImpactorPopulation:
 		r_body = body.radius_body
 		continuous_ejecta_blanket_factor = params.continuous_ejecta_blanket_factor
 
-		np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))    # Need to reseed the random number generator each time for multiprocessing
+		np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))
 
 		timestep_diams = []
 		timestep_x = []
@@ -507,6 +505,8 @@ class ImpactorPopulation:
 		current_time = t*dt
 		regolith_thickness = (body.model_avg_regolith_thickness/(body.model_avg_age**(0.5)))*(current_time**(0.5))
 		frac_depth = (body.known_avg_fractured_depth/(body.known_avg_age**(0.5)))*(current_time**(0.5))
+
+		X,Y = np.ogrid[:grid_size, :grid_size]
 
 		for i in range(len(avg_imp_diam)):
 			cur_imp_diam = avg_imp_diam[i]
@@ -542,8 +542,6 @@ class ImpactorPopulation:
 				timestep_x.append(primary_crater_x_pix)
 				timestep_y.append(primary_crater_y_pix)
 				timestep_primary_index.append(np.ones(len(primary_crater_diams)))
-
-				X,Y = np.ogrid[:grid_size, :grid_size]
 
 				for j in range(len(primary_crater_diams)):
 					D_p = primary_crater_diams[j]
@@ -595,12 +593,13 @@ class ImpactorPopulation:
 								secondary_crater_x_pix = secondary_crater_x_pix[on_grid_secondaries]
 								secondary_crater_y_pix = secondary_crater_y_pix[on_grid_secondaries]
 
+								secondary_shallowing_factor = 0.5*(avg_dist_from_crater_center/(np.pi*body.radius_body) + 1.0)
+
 								if len(secondary_crater_diameters) > 0:
 									timestep_diams.append(secondary_crater_diameters)
 									timestep_x.append(secondary_crater_x_pix)
 									timestep_y.append(secondary_crater_y_pix)
-									timestep_primary_index.append(np.zeros(len(secondary_crater_diameters)))
-
+									timestep_primary_index.append(secondary_shallowing_factor*np.ones(len(secondary_crater_diameters)))
 
 			##### SECONDARY IMPACTS FROM OFF-GRID CRATERS #####
 			# Global craters in this diameter bin are large enough to potentially produce resolvable secondaries
@@ -695,11 +694,13 @@ class ImpactorPopulation:
 								secondary_crater_y_pix = secondary_crater_y_pix[on_grid_secondaries]
 								sec_dists_from_grid = sec_dists_from_grid[on_grid_secondaries]
 
+								secondary_shallowing_factor = 0.5*(avg_dist/(np.pi*body.radius_body) + 1.0)
+
 								if len(annulus_secondary_diameters) > 0:
 									timestep_diams.append(annulus_secondary_diameters)
 									timestep_x.append(secondary_crater_x_pix)
 									timestep_y.append(secondary_crater_y_pix)
-									timestep_primary_index.append(np.zeros(len(annulus_secondary_diameters)))
+									timestep_primary_index.append(secondary_shallowing_factor*np.ones(len(annulus_secondary_diameters)))
 									sec_dist_arr.append(sec_dists_from_grid)
 
 		if len(timestep_diams) > 0:
@@ -1435,7 +1436,6 @@ class Tracer:
 
 			return [x_p, y_p, z_p]
 
-
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 
 
@@ -1459,8 +1459,6 @@ class Model:
 			if params.tracers_on:
 				print('Tracer particles tracked under the effects of the processes listed above')
 			print('')
-		else:
-			pass
 
 	def run(self):
 		starttime = time()
@@ -1471,18 +1469,24 @@ class Model:
 
 		params.diffusivity = float(sys.argv[1])
 
-		params.model_time = 1.0e9
-		dt = 35.e6/100
+		'''
+		params.model_time = 3.5e9
+		dt = params.model_time/100.0
 		if params.explicit_diffusion:
 			dt_stable = 0.1*(params.resolution**2)/(4.0*params.diffusivity)
 			if dt_stable < dt:
 				dt = dt_stable
 		params.dt = dt
 		params.nsteps = int(params.model_time/params.dt)
+		#params.nsteps = 1
+		'''
 
 		grid = Grid(params.grid_size, params.resolution, params.diffusivity, params.dt)
 		grid_old = grid.setUpGrid()
 		grid_new = grid_old.copy()
+
+		median_slope_arr = np.zeros(params.nsteps)
+		median_elev_arr = np.zeros(params.nsteps)
 
 		if params.verbose:
 			print('Grid size (meters): {}'.format(grid.grid_width))
@@ -1507,7 +1511,8 @@ class Model:
 			if params.verbose:
 				if params.secondaries_on:
 
-					d_sec_craters = d_craters[np.where(index_craters == 0.0)]
+					d_sec_craters = d_craters[np.where(index_craters < 1.0)]
+					index_sec_craters = index_craters[np.where(index_craters < 1.0)]
 					print('Primary craters')
 					print('Total number of craters: {}'.format(len(d_craters)))
 					print('Number of primary craters: {}'.format(len(d_craters) - len(d_sec_craters)))
@@ -1526,7 +1531,7 @@ class Model:
 					plt.hist(d_craters)
 					plt.xlabel('Crater diameter (m)')
 					plt.subplot(223)
-					plt.hist(d_sec_craters)
+					plt.hist(index_craters)
 					plt.xlabel('Crater diameter (m)')
 					plt.subplot(222)
 					plt.hist(t_craters)
@@ -1581,7 +1586,7 @@ class Model:
 			print('Evolving the landscape...')
 
 		for t in range(params.nsteps):
-			np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))    # Need to reseed the random number generator each time for multiprocessing
+			np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))
 
 			if params.cratering_on:
 				##### ------------------------------------------------------------------------- #####
@@ -1756,8 +1761,17 @@ class Model:
 
 					tracers[j].update_trajectory(x_final, y_final, z_final, depth_final, slope_final)
 
+
 			if params.verbose:
 				progress(t, params.nsteps)
+
+			x_slope, y_slope = np.gradient(grid_old, params.resolution)
+			slope_grid = np.rad2deg(np.arctan(np.sqrt( x_slope**2 + y_slope**2)))
+			slope_grid = slope_grid[1:-1, 1:-1]
+
+			median_slope = np.median(abs(slope_grid.flatten()))
+			median_slope_arr[t] = median_slope
+			median_elev_arr[t] = np.mean(grid_old)
 
 		if params.verbose:
 			progress(params.nsteps, params.nsteps)
@@ -1765,30 +1779,33 @@ class Model:
 
 		grid = grid_old.copy()
 
-    	fname = '/extra/pob/NoiseCalibration_17m/' + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
-
-    	np.savetxt(fname, grid)
-
-		'''
-		grid = grid_old.copy()
 		x_slope, y_slope = np.gradient(grid, params.resolution)
 		slope_grid = np.rad2deg(np.arctan(np.sqrt( x_slope**2 + y_slope**2)))
 		slope_grid = slope_grid[1:-1, 1:-1]
 
 		median_slope = np.median(abs(slope_grid.flatten()))
-		'''
+
 		if params.verbose:
 
-			ls = LightSource(azdeg=270, altdeg=30.0)
-
-			plt.figure()
-			plt.subplot(221)
-			plt.imshow(ls.hillshade(grid.T, dx=params.resolution, dy=params.resolution), extent=(0, params.grid_width, 0, params.grid_width), cmap='gray')
-			plt.subplot(222)
-			plt.imshow(grid.T)
-
-
 			if params.tracers_on:
+				ls = LightSource(azdeg=270, altdeg=30.0)
+
+				plt.figure()
+				plt.subplot(221)
+				plt.imshow(ls.hillshade(grid.T, dx=params.resolution, dy=params.resolution), extent=(0, params.grid_width, 0, params.grid_width), cmap='gray')
+				plt.subplot(222)
+				plt.imshow(grid.T)
+
+				plt.figure()
+				plt.subplot(121)
+				plt.plot(np.arange(len(median_slope_arr))*params.dt, median_slope_arr)
+				plt.xlabel('Time')
+				plt.ylabel('Median slope (deg)')
+				plt.subplot(122)
+				plt.plot(np.arange(len(median_slope_arr))*params.dt, median_elev_arr)
+				plt.xlabel('Time')
+				plt.ylabel('Mean grid elevation (m)')
+
 				for j in range(len(tracers)):
 					pos = tracers[j].current_position()
 					plt.scatter(pos[0], pos[1], c='r', s=2)
@@ -1831,12 +1848,35 @@ class Model:
 
 				print('')
 				runtime = time()- starttime
-				print('Runtime (hr): {}'.format(runtime/3600.0))
+				print('Runtime (min): {}'.format(runtime/3600.0))
+				print('')
+
+			else:
+				ls = LightSource(azdeg=270, altdeg=30.0)
+
+				plt.figure()
+				plt.subplot(121)
+				plt.imshow(ls.hillshade(grid.T, dx=params.resolution, dy=params.resolution), extent=(0, params.grid_width, 0, params.grid_width), cmap='gray')
+				plt.subplot(122)
+				plt.imshow(grid.T)
+
+				plt.figure()
+				plt.subplot(121)
+				plt.plot(np.arange(len(median_slope_arr))*params.dt/(1.e6), median_slope_arr)
+				plt.xlabel('Time (Myr)')
+				plt.ylabel('Median slope (deg)')
+				plt.subplot(122)
+				plt.plot(np.arange(len(median_slope_arr))*params.dt/(1.e6), median_elev_arr)
+				plt.axhline(0.0, color='k', linestyle='--')
+				plt.xlabel('Time (Myr)')
+				plt.ylabel('Mean grid elevation (m)')
+
+				print('')
+				runtime = time()- starttime
+				print('Runtime (min): {}'.format(runtime/60.0))
 				print('')
 
 			plt.show()
-
-
 
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 
@@ -1846,12 +1886,11 @@ def main():
 	model = Model()
 	model.run()
 
-	######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
-
-
-
+######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 
 
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 if __name__ == "__main__":
 	main()
+
+######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
