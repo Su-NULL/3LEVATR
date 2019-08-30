@@ -16,6 +16,7 @@ from misc_functions import *
 from matplotlib.colors import LightSource
 from scipy.optimize import minimize
 from scipy import interpolate
+import scipy
 import uuid
 
 np.random.seed(np.random.randint(10000) + int(sys.argv[2]))
@@ -79,14 +80,14 @@ class Grid:
 
 					u_row_below = grid_inter[:,j+1]
 
-					grid_inter[:,j] = np.linalg.solve(A_edge, u_row + alpha_diff*u_row_below)
+					grid_inter[:,j] = scipy.linalg.solve(A_edge, u_row + alpha_diff*u_row_below)
 
 				elif j == N-1:    # Bottom rows
 					u_row = grid_old[:,j]
 
 					u_row_above = grid_inter[:,j-1]
 
-					grid_inter[:,j] = np.linalg.solve(A_edge, u_row + alpha_diff*u_row_above)
+					grid_inter[:,j] = scipy.linalg.solve(A_edge, u_row + alpha_diff*u_row_above)
 
 				else:    # All other rows
 					u_row = grid_old[:,j]
@@ -94,7 +95,7 @@ class Grid:
 					u_row_above = grid_inter[:, j-1]
 					u_row_below = grid_inter[:, j+1]
 
-					grid_inter[:,j] = np.linalg.solve(A_interior, u_row + alpha_diff*u_row_above + alpha_diff*u_row_below)
+					grid_inter[:,j] = scipy.linalg.solve(A_interior, u_row + alpha_diff*u_row_above + alpha_diff*u_row_below)
 
 			# Do all columns
 			for i in range(N):
@@ -103,14 +104,14 @@ class Grid:
 
 					u_col_right = grid_inter[i+1,:]
 
-					grid_inter[i,:] = np.linalg.solve(A_edge, u_col + alpha_diff*u_col_right)
+					grid_inter[i,:] = scipy.linalg.solve(A_edge, u_col + alpha_diff*u_col_right)
 
 				elif i == N-1:    # Right column
 					u_col = grid_old[i,:]
 
 					u_col_left = grid_inter[i-1,:]
 
-					grid_inter[i,:] = np.linalg.solve(A_edge, u_col + alpha_diff*u_col_left)
+					grid_inter[i,:] = scipy.linalg.solve(A_edge, u_col + alpha_diff*u_col_left)
 
 				else:    # All other columns
 					u_col = grid_old[i,:]
@@ -118,7 +119,7 @@ class Grid:
 					u_col_left = grid_inter[i-1,:]
 					u_col_right = grid_inter[i+1,:]
 
-					grid_inter[i,:] = np.linalg.solve(A_interior, u_col + alpha_diff*u_col_left + alpha_diff*u_col_right)
+					grid_inter[i,:] = scipy.linalg.solve(A_interior, u_col + alpha_diff*u_col_left + alpha_diff*u_col_right)
 
 			itr += 1
 
