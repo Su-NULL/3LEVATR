@@ -10,7 +10,7 @@ import sys
 import body
 import params as params
 from scipy.interpolate import interp1d
-from time import time
+from time import time, process_time
 import matplotlib.pyplot as plt
 from misc_functions import *
 from matplotlib.colors import LightSource
@@ -19,8 +19,8 @@ from scipy import interpolate
 import scipy
 import uuid
 
-np.random.seed(np.random.randint(10000) + int(sys.argv[2]))
-
+#np.random.seed(np.random.randint(10000) + int(sys.argv[2]))
+np.random.seed(int(sys.argv[2]))
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 
 
@@ -46,6 +46,7 @@ class Grid:
 				if i==0:
 					A_interior[i,:] = [1.0+3.0*alpha_diff if j==0 else (-alpha_diff) if j==1 else 0 for j in range(N)]
 					A_edge[i,:] = [1.0+2.0*alpha_diff if j==0 else (-alpha_diff) if j==1 else 0 for j in range(N)]
+
 				elif i==N-1:
 					A_interior[i,:] = [1.0+3.0*alpha_diff if j==N-1 else (-alpha_diff) if j==N-2 else 0 for j in range(N)]
 					A_edge[i,:] = [1.0+2.0*alpha_diff if j==N-1 else (-alpha_diff) if j==N-2 else 0 for j in range(N)]
@@ -68,7 +69,7 @@ class Grid:
 		N = self.grid_size
 
 		itr_max = 5
-		grid_inter = grid_old.copy()
+		grid_inter = np.copy(grid_old)
 
 		itr = 0
 		while itr < itr_max:
@@ -123,8 +124,7 @@ class Grid:
 
 			itr += 1
 
-		grid_new = grid_inter.copy()
-		return grid_new
+		return np.copy(grid_inter)
 
 	def explicit_diffusion2D(self, grid_old):
 		 # Compute diffusion for grid using input parameters
@@ -143,26 +143,19 @@ class Grid:
 
 		return grid_new
 
-	def add_crater(self, grid, x_center, y_center, diameter, res, primary_index):
+	def add_crater(self, grid, x_center, y_center, diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid):
 
-		current_grid = grid.copy()
-		grid_size = self.grid_size
+		current_grid = np.copy(grid)
+		grid_size = int(current_grid.shape[0])
 
 		radius = diameter/2.0
 
 		depth = (269.0/81.0)*(0.04*diameter)*primary_index
 		rim_height = 0.04*diameter*primary_index
 
-		r_ejecta = params.continuous_ejecta_blanket_factor*radius
+		r_ejecta = continuous_ejecta_blanket_factor*radius
 
-		X,Y = np.ogrid[:grid_size, :grid_size]
-
-		dx = abs(X - x_center)
-		dy = abs(Y - y_center)
-		dx = dx*res
-		dy = dy*res
-
-		dist_from_center = np.hypot(dx, dy)
+		dist_from_center = np.hypot(abs(X_grid - x_center)*res, abs(Y_grid - y_center)*res)
 
 		# Grid pixels covered by the crater
 		crater_mask = dist_from_center <= radius
@@ -173,7 +166,7 @@ class Grid:
 		# Inheritance parameter, set as a constant, see Howard 2007, I=0 --> crater rim horizontal, I=1 --> crater rim parallel to pre-existing slope
 		I_i = 0.9
 
-		weighted_grid = grid.copy()
+		weighted_grid = np.copy(grid)
 		outside_mask = dist_from_center > radius
 
 		weighted_grid[outside_mask] = current_grid[outside_mask]*(1.0/dist_from_center[outside_mask])
@@ -188,32 +181,28 @@ class Grid:
 			E_r = np.zeros((grid_size, grid_size))
 
 		# Crater elevation profile
-		delta_H_crater = (((np.hypot(dx, dy)/radius)**2)*(rim_height + depth)) - depth
+		delta_H_crater = (((dist_from_center/radius)**2)*(rim_height + depth)) - depth
 
 		# Ejecta elevation profile
 		with np.errstate(divide='ignore'):    # Divide by zero at r=0 but we don't care about that point since it's interior to the ejecta blanket
-			#delta_H_ejecta = rim_height*( ( (np.hypot(dx, dy))/(radius))**(-3.0))
-			#delta_H_ejecta = (rim_height/(1.0 - params.continuous_ejecta_blanket_factor**(-3)))*( ( (np.hypot(dx, dy))/(radius))**(-3.0)) - (rim_height/(1.0 - params.continuous_ejecta_blanket_factor**(-3)))*(params.continuous_ejecta_blanket_factor**-3)
-			delta_H_ejecta = rim_height*((np.hypot(dx, dy)/radius)**-3) - (rim_height/54.0)*((np.hypot(dx, dy)/radius) - 1.0)
+			delta_H_ejecta = rim_height*((dist_from_center/radius)**-3) - (rim_height/54.0)*((dist_from_center/radius) - 1.0)
 
 		# Inheritance matrices - determines how the crater is integrated into the existing grid
-		G_grid = (1.0 - I_i)*np.ones((grid_size, grid_size))
+		G_grid = (1.0 - I_i)*ones_grid
 		min_mask = G_grid > delta_H_ejecta/rim_height
 		G_grid[min_mask] = delta_H_ejecta[min_mask]/rim_height
 
 		crater_inh_profile = (1.0 - I_i*((dist_from_center/radius)**2.0))*(E_r - current_grid)
 		ejecta_inh_profile = G_grid*(E_r - current_grid)
 
-		delta_E_crater = delta_H_crater + crater_inh_profile# + noise_profile
-		delta_E_ejecta = delta_H_ejecta + ejecta_inh_profile# + noise_profile
+		delta_E_crater = delta_H_crater + crater_inh_profile
+		delta_E_ejecta = delta_H_ejecta + ejecta_inh_profile
 
 		# Add calculated elevations to the grid at the corresponding pixels
 		grid[crater_mask] += delta_E_crater[crater_mask]
 		grid[ejecta_mask] += delta_E_ejecta[ejecta_mask]
 
-		ret_grid = grid.copy()
-
-		return ret_grid
+		return grid
 
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 
@@ -392,48 +381,42 @@ class ImpactorPopulation:
 
 		return (gamma*D_c)*( (numerator/denominator)**((0.554 - beta)/(2.554)))
 
-	def secondaries(self, r, D_p, D_min, D_max, r_body, grid_area, max_dist_for_sec):
+	def secondaries(self, r, D_p, D_min, D_max, r_body, grid_area, max_dist_for_sec, num_annuli_imps):
 		# r is distance between primary and center of grid, in meters
 		# D_p is primary crater diameter in meters
 		# R is radius of the Moon in meters
 		# resolution is pixel resolution in meters/pixels
 		# grid_area is total area of the grid in meters^2
 
-		secondary_diameter_array = []
 		R_p = D_p/2.0
 		b_cum = 4.0
 
-		annulus_area = (np.pi*( (r + max_dist_for_sec)**2 - (r - max_dist_for_sec)**2))/(1.e6)		# Area of annulus containing the grid in km^2
+		annulus_area = (np.pi*((r + max_dist_for_sec)**2 - (r - max_dist_for_sec)**2))/(1.e6)		# Area of annulus containing the grid in km^2
 		c_sfd = (D_max**b_cum)/annulus_area
 
-		# Define diameter bins with sqrt(2) spacing between D_min and D_max
-		diam_bins = np.geomspace(D_min, D_max, 10)
+		# Define diameter bins with geometric spacing between D_min and D_max
+		diam_bins = np.geomspace(D_min, D_max, 10, endpoint=True, dtype=np.float)
 		geom_factor = diam_bins[1]/diam_bins[0]
 
 		# Calculate the incremental number of craters in each diameter bin using the cumulative SFD
-		inc_num = np.zeros(len(diam_bins)-1)
-
-		for i in range(len(diam_bins)-1):
-			inc_num[i] = c_sfd*diam_bins[i]**-b_cum - c_sfd*diam_bins[i+1]**-b_cum
+		inc_num = np.array([c_sfd*(diam_bins[i]**(-b_cum) - diam_bins[i+1]**(-b_cum)) for i in range(len(diam_bins)-1)])
 
 		# Poisson lambdas for each bin by multiplying by the grid area in km^2
 		secondary_lams = inc_num*(grid_area/(1.e6))
 		secondary_lams[secondary_lams < 0] = 0
-		diam_bins = diam_bins[0:-1]
 
-		for i in range(len(diam_bins)):
-			current_secondary_crater_diam = diam_bins[i]
-			num_secs_on_grid = np.random.poisson(lam=secondary_lams[i])
+		# Make diameter bins the geometric average of each bin
+		diam_bins = diam_bins[0:-1]*np.sqrt(geom_factor)
 
-			diam_interval = geom_factor*current_secondary_crater_diam - current_secondary_crater_diam
+		# Poisson sampling of the number of secondaries in each secondary crater diameter bin
+		num_secs_on_grid_arr = np.random.poisson(lam=secondary_lams, size=len(secondary_lams))*num_annuli_imps
 
-			current_secondary_diameters = current_secondary_crater_diam*np.ones(num_secs_on_grid) + np.random.rand(num_secs_on_grid)*diam_interval
+		# Add a random amount to each bin so diameters are uniformly spaced within the bin (instead of all at the geometric average)
+		#secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i]) + np.random.rand(num_secs_on_grid_arr[i])*(geom_factor*diam_bins[i] - diam_bins[i]) for i in range(len(diam_bins))])
+		# For speedup, just use the geometric average
+		secondary_diameters =  np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i], dtype=np.float) for i in range(len(diam_bins))])
 
-			secondary_diameter_array.append(current_secondary_diameters)
-
-		secondary_diameter_array = np.concatenate(secondary_diameter_array)
-
-		return secondary_diameter_array
+		return secondary_diameters
 
 	def grid_secondaries(self, r, D_p, D_min, D_max, r_body, grid_area, max_dist_for_sec, continuous_ejecta_blanket_factor):
 		# r is distance between primary and center of grid, in meters
@@ -442,55 +425,38 @@ class ImpactorPopulation:
 		# resolution is pixel resolution in meters/pixels
 		# grid_area is total area of the grid in meters^2
 
-		secondary_diameter_array = []
 		R_p = D_p/2.0
 		b_cum = 4.0
 
-		annulus_area = (np.pi*( (continuous_ejecta_blanket_factor*R_p + max_dist_for_sec)**2 - (continuous_ejecta_blanket_factor*R_p)**2))/(1.e6)		# Area of annulus containing the grid in km^2
+		annulus_area = (np.pi*((continuous_ejecta_blanket_factor*R_p + max_dist_for_sec)**2 - (continuous_ejecta_blanket_factor*R_p)**2))/(1.e6)		# Area of annulus containing the grid in km^2
 		c_sfd = (D_max**b_cum)/annulus_area
 
 		# Define diameter bins with sqrt(2) spacing between D_min and D_max
-		diam_bins = np.geomspace(D_min, D_max, 10)
+		diam_bins = np.geomspace(D_min, D_max, 10, endpoint=True, dtype=np.float)
 		geom_factor = diam_bins[1]/diam_bins[0]
 
 		# Calculate the incremental number of craters in each diameter bin using the cumulative SFD
-		inc_num = np.zeros(len(diam_bins)-1)
-
-		for i in range(len(diam_bins)-1):
-			inc_num[i] = c_sfd*diam_bins[i]**-b_cum - c_sfd*diam_bins[i+1]**-b_cum
+		inc_num = np.array([c_sfd*diam_bins[i]**(-b_cum) - c_sfd*diam_bins[i+1]**(-b_cum) for i in range(len(diam_bins)-1)])
 
 		# Poisson lambdas for each bin by multiplying by the grid area in km^2
 		secondary_lams = inc_num*(grid_area/(1.e6))
-		secondary_lams[secondary_lams < 0] = 0
+		secondary_lams[secondary_lams < 0] = 0.0
 
-		diam_bins = diam_bins[0:-1]
+		# Make diameter bins the geometri average of each bin
+		diam_bins = diam_bins[0:-1]*np.sqrt(geom_factor)
 
-		for i in range(len(diam_bins)):
-			current_secondary_crater_diam = diam_bins[i]
-			num_secs_on_grid = np.random.poisson(lam=secondary_lams[i])
+		# Poisson sampling of the number of secondaries in each secondary crater diameter bin
+		num_secs_on_grid_arr = np.random.poisson(lam=secondary_lams, size=len(secondary_lams))
 
-			diam_interval = geom_factor*current_secondary_crater_diam - current_secondary_crater_diam
+		# Add a random amount to each bin so diameters are uniformly spaced within the bin (instead of all at one of the edges or the geometric average)
+		#secondary_diameters = [diam_bins[i]*np.ones(num_secs_on_grid_arr[i]) + np.random.rand(num_secs_on_grid_arr[i])*(geom_factor*diam_bins[i] - diam_bins[i]) for i in range(len(diam_bins))]
+		secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i], dtype=np.float) for i in range(len(diam_bins))])
 
-			current_secondary_diameters = current_secondary_crater_diam*np.ones(num_secs_on_grid) + np.random.rand(num_secs_on_grid)*diam_interval
+		return secondary_diameters
 
-			secondary_diameter_array.append(current_secondary_diameters)
+	def sample_timestep_craters(self, t, avg_imp_diam, primary_lams, max_grid_dist, avg_crater_diam, num_inc, dt, min_crater, resolution, grid_size, grid_width, min_primary_for_secondaries, secondaries_on, r_body, continuous_ejecta_blanket_factor, X_grid, Y_grid):
 
-		secondary_diameter_array = np.concatenate(secondary_diameter_array)
-
-		return secondary_diameter_array
-
-	def sample_timestep_craters(self, t, avg_imp_diam, primary_lams, max_grid_dist, avg_crater_diam, num_inc):
-		dt = params.dt
-		min_crater = params.min_crater
-		resolution = params.resolution
-		grid_size = params.grid_size
-		grid_width = params.grid_width
-		min_primary_for_secondaries = params.min_primary_for_secondaries
-		secondaries_on = params.secondaries_on
-		r_body = body.radius_body
-		continuous_ejecta_blanket_factor = params.continuous_ejecta_blanket_factor
-
-		np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))
+		#np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))
 
 		timestep_diams = []
 		timestep_x = []
@@ -538,8 +504,6 @@ class ImpactorPopulation:
 				timestep_y.append(primary_crater_y_pix)
 				timestep_primary_index.append(np.ones(len(primary_crater_diams)))
 
-				X,Y = np.ogrid[:grid_size, :grid_size]
-
 				for j in range(len(primary_crater_diams)):
 					D_p = primary_crater_diams[j]
 
@@ -548,8 +512,8 @@ class ImpactorPopulation:
 						x_crater = primary_crater_x_pix[j]
 						y_crater = primary_crater_y_pix[j]
 
-						dx = abs(X - x_crater)*resolution
-						dy = abs(Y - y_crater)*resolution
+						dx = abs(X_grid - x_crater)*resolution
+						dy = abs(Y_grid - y_crater)*resolution
 
 						dist_from_crater_center = np.hypot(dx, dy)
 						dist_from_crater_center[dist_from_crater_center <= continuous_ejecta_blanket_factor*(D_p/2.0)] = np.nan
@@ -608,16 +572,12 @@ class ImpactorPopulation:
 				theta0 = max_grid_dist[i]/r_body		# radians
 				theta_max = np.pi
 
-				theta_arr = np.linspace(theta0, theta_max, 1001,  endpoint=True)		# radians
+				theta_arr = np.linspace(theta0, theta_max, 101,  endpoint=True, dtype=np.float)		# radians
 				d_theta = theta_arr[1] - theta_arr[0]
 
-				surface_area_arr = []	# m^2
-				theta_arr_new = []
-				for j in range(1, len(theta_arr)):
-					surface_area_arr.append(2.0*np.pi*r_body**2*(np.cos(theta_arr[j-1]) - np.cos(theta_arr[j])))
-					theta_arr_new.append(theta_arr[j])
-				surface_area_arr = np.array(surface_area_arr)
-				theta_arr = np.array(theta_arr_new)
+				# Array of surface area in each annulus
+				surface_area_arr = np.array([2.0*np.pi*r_body**2*(np.cos(theta_arr[j-1]) - np.cos(theta_arr[j])) for j in range(1, len(theta_arr))])
+				theta_arr = theta_arr[1:]
 
 				avg_dist_arr = r_body*(theta_arr - d_theta)		# m
 
@@ -651,10 +611,13 @@ class ImpactorPopulation:
 
 						# Number of primary impacts of the current diameter in this annulus at the current timestep
 						num_annuli_imps = num_annuli_imps_arr[j]
-
+						'''
 						# Loop through each primary impact and compute all secondaries from that impact that overlap the grid
 						for k in range(num_annuli_imps):
-							annulus_secondary_diameters.append(self.secondaries(avg_dist, D_p, min_crater, max_sec_diam, r_body, max_sec_area, max_dist_for_sec))
+							annulus_secondary_diameters.append(self.secondaries(avg_dist, D_p, min_crater, max_sec_diam, r_body, max_sec_area, max_dist_for_sec, num_annuli_imps))
+						'''
+						if num_annuli_imps > 0:
+							annulus_secondary_diameters.append(self.secondaries(avg_dist, D_p, min_crater, max_sec_diam, r_body, max_sec_area, max_dist_for_sec, num_annuli_imps))
 
 
 						if len(annulus_secondary_diameters) > 0:
@@ -719,6 +682,8 @@ class ImpactorPopulation:
 
 		nsteps = params.nsteps
 		grid_width = params.grid_width
+		X_grid, Y_grid = np.ogrid[:params.grid_size, :params.grid_size]
+
 
 		d_min = self.calc_min_impactor(params.min_crater, body.velocity_max*1000.0, 0.0)
 
@@ -746,13 +711,10 @@ class ImpactorPopulation:
 		max_crater_radius = max_crater_diam/2.0
 		avg_crater_radius = avg_crater_diam/2.0
 
-		max_grid_dist = np.sqrt(grid_width**2/2.0) + params.continuous_ejecta_blanket_factor*max_crater_radius
+		max_grid_dist = (np.sqrt(grid_width**2/2.0) + params.continuous_ejecta_blanket_factor*max_crater_radius)#*1.25
 		max_grid_area = np.pi*max_grid_dist**2
 
-		num_inc = np.zeros(len(diam_bins)-1)
-		for i in range(len(diam_bins)-1):
-			n = cum_num[i] - cum_num[i+1]
-			num_inc[i] = n
+		num_inc = [cum_num[i] - cum_num[i+1] for i in range(len(diam_bins)-1)]
 		diam_bins = diam_bins[0:-1]
 		avg_imp_diam = avg_imp_diam[0:-1]
 
@@ -772,7 +734,7 @@ class ImpactorPopulation:
 		dist_secs = []
 
 		for t in range(nsteps):
-			timestep_diams, timestep_x, timestep_y, timestep_primary_index, timestep_time, sec_dist_arr = self.sample_timestep_craters(t, avg_imp_diam, primary_lams, max_grid_dist, avg_crater_diam, num_inc)
+			timestep_diams, timestep_x, timestep_y, timestep_primary_index, timestep_time, sec_dist_arr = self.sample_timestep_craters(t, avg_imp_diam, primary_lams, max_grid_dist, avg_crater_diam, num_inc, params.dt, params.min_crater, params.resolution, params.grid_size, params.grid_width, params.min_primary_for_secondaries, params.secondaries_on, body.radius_body, params.continuous_ejecta_blanket_factor, X_grid, Y_grid)
 
 			d_craters.append(timestep_diams)
 			x_craters.append(timestep_x)
@@ -1095,7 +1057,7 @@ class Tracer:
 								##### For plotting purposes only
 								plt.plot(x_p0, z_p0, 'yX')
 
-								t_arr = np.linspace(0.0, t_land, 100)
+								t_arr = np.linspace(0.0, t_land, 100, dtype=np.float)
 								r_t_flight = R0 + ejection_velocity_vertical*t_arr
 								z_t_flight = z_p0 + ejection_velocity_vertical*t_arr - 0.5*g*(t_arr**2)
 
@@ -1211,7 +1173,7 @@ class Tracer:
 						# FINAL PARTICLE POSITION DETERMINED - C3:S1
 
 						if plot_on:
-							t_arr = np.linspace(0.0, t_flow, 100)
+							t_arr = np.linspace(0.0, t_flow, 100, dtype=np.float)
 							R_flow = -1.0*((R0**4 + 4.0*alpha*t_arr)**(0.25))
 
 							x_flow = x_p0*np.ones(len(R_flow))
@@ -1304,7 +1266,7 @@ class Tracer:
 
 								if plot_on:
 									##### For plotting purposes only
-									t_arr = np.linspace(0.0, t_eject, 100)
+									t_arr = np.linspace(0.0, t_eject, 100, dtype=np.float)
 									R_flow = (R0**4 + 4.0*alpha*t_arr)**(0.25)
 
 									theta_flow = np.arccos(1.0 - ( (1.0-np.cos(theta0))*(R_flow/R0)   ))
@@ -1317,7 +1279,7 @@ class Tracer:
 									plt.plot(x_flow, z_flow, 'r--')
 									plt.plot(x_flow[-1], z_flow[-1], 'yX')
 
-									t_arr = np.linspace(0.0, t_land, 100)
+									t_arr = np.linspace(0.0, t_land, 100, dtype=np.float)
 
 									r_flight = R_eject + ejection_velocity_vertical*t_arr
 									z_flight = z_eject + ejection_velocity_vertical*t_arr - 0.5*g*(t_arr**2)
@@ -1339,7 +1301,7 @@ class Tracer:
 
 								if plot_on:
 
-									t_arr = np.linspace(0.0, t_eject, 100)
+									t_arr = np.linspace(0.0, t_eject, 100, dtype=np.float)
 									R_flow = (R0**4 + 4.0*alpha*t_arr)**(0.25)
 
 									theta_flow = np.arccos(1.0 - ( (1.0-np.cos(theta0))*(R_flow/R0)   ))
@@ -1386,7 +1348,7 @@ class Tracer:
 									z_p = grid_new[x_p, y_p]
 
 								if plot_on:
-									t_arr = np.linspace(0.0, t_flow, 100)
+									t_arr = np.linspace(0.0, t_flow, 100, dtype=np.float)
 									R_flow = (R0**4 + 4.0*alpha*t_arr)**(0.25)
 
 									theta_flow = np.arccos(1.0 - ( (1.0-np.cos(theta0))*(R_flow/R0)   ))
@@ -1409,7 +1371,7 @@ class Tracer:
 							# FINAL PARTICLE POSITION DETERMINED - C3:S3
 
 			if ~np.isnan(x_p):
-				grid_old = grid_new.copy()
+				grid_old = np.copy(grid_new)
 				d_p = grid_old[x_p, y_p] - z_p
 				if d_p < 0.0:
 					print('PARTICLE ABOVE THE SURFACE - END OF FUNCTION')
@@ -1472,7 +1434,13 @@ class Model:
 
 		grid = Grid(params.grid_size, params.resolution, params.diffusivity, params.dt)
 		grid_old = grid.setUpGrid()
-		grid_new = grid_old.copy()
+		grid_new = np.copy(grid_old)
+
+		X_grid, Y_grid = np.ogrid[:params.grid_size, :params.grid_size]
+		ones_grid = np.ones((params.grid_size, params.grid_size))
+
+		continuous_ejecta_blanket_factor = params.continuous_ejecta_blanket_factor
+		resolution = params.resolution
 
 		if params.verbose:
 			print('Grid size (meters): {}'.format(grid.grid_width))
@@ -1493,7 +1461,29 @@ class Model:
 			impPop = ImpactorPopulation()
 
 			d_craters, x_craters, y_craters, index_craters, t_craters, dist_secs = impPop.sample_all_craters()
+			'''
+			plt.figure()
+			plt.scatter(x_craters, y_craters, s=1)
+			plt.axvline(0.0, c='r')
+			plt.axvline(params.grid_size, c='r')
+			plt.axhline(0.0, c='r')
+			plt.axhline(params.grid_size, c='r')
 
+			x_craters = x_craters[np.where(x_craters < 200)]
+			y_craters = y_craters[np.where(x_craters < 200)]
+
+			plt.figure()
+			plt.subplot(121)
+			plt.hist(x_craters, bins=100)
+			plt.axvline(0.0, c='r')
+			plt.axvline(params.grid_size, c='r')
+			plt.subplot(122)
+			plt.hist(y_craters, bins=100)
+			plt.axvline(0.0, c='r')
+			plt.axvline(params.grid_size, c='r')
+			plt.show()
+			sys.exit()
+			'''
 			if params.verbose:
 				if params.secondaries_on:
 
@@ -1543,9 +1533,9 @@ class Model:
 				print('Initializing tracer particles...')
 
 			n_pd = params.n_particles_per_layer
-			x_points = np.linspace(5, params.grid_size - 5, n_pd).astype('int')
-			y_points = np.linspace(5, params.grid_size - 5, n_pd).astype('int')
-			z_points = np.geomspace(1.0, (params.grid_width/4.0/1.17/10.0 + 1.0), n_pd)    # Particles end at excavation depth of crater 1/4 the grid width
+			x_points = np.linspace(5, params.grid_size - 5, n_pd, dtype=np.int)
+			y_points = np.linspace(5, params.grid_size - 5, n_pd, dtype=np.int)
+			z_points = np.geomspace(1.0, (params.grid_width/4.0/1.17/10.0 + 1.0), n_pd, dtype=np.float)    # Particles end at excavation depth of crater 1/4 the grid width
 			z_points = -1.0*(z_points - 1.0)
 			z_points[0] = 0.0
 
@@ -1575,7 +1565,7 @@ class Model:
 		median_elev_arr = np.zeros(params.nsteps)
 
 		for t in range(params.nsteps):
-			np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))
+			#np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))
 
 			if params.cratering_on:
 				##### ------------------------------------------------------------------------- #####
@@ -1608,7 +1598,7 @@ class Model:
 					x_crater_pix = int(current_x[i])
 					y_crater_pix = int(current_y[i])
 
-					grid_new = grid.add_crater(grid_old.copy(), x_crater_pix, y_crater_pix, crater_diam, params.resolution, crater_index)
+					grid_new = grid.add_crater(np.copy(grid_old), x_crater_pix, y_crater_pix, crater_diam, resolution, crater_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid)
 
 					if params.tracers_on:
 						##### -------------------- #####
@@ -1649,11 +1639,11 @@ class Model:
 						##### -------------------- #####
 					##### --------------------------------------------------------------------- #####
 					# Update grid after adding crater
-					grid_old = grid_new.copy()
+					grid_old = np.copy(grid_new)
 
 				##### --------------------------------------------------------------------- #####
 				# Update grid after adding all craters
-				grid_old = grid_new.copy()
+				grid_old = np.copy(grid_new)
 
 			if params.pixel_noise_on:
 				##### ------------------------------------------------------------------------- #####
@@ -1759,15 +1749,17 @@ class Model:
 
 			median_slope = np.median(abs(slope_grid.flatten()))
 			median_slope_arr[t] = (median_slope)
-			median_elev_arr[t] = np.median(grid_old)
+			median_elev_arr[t] = np.average(grid_old)
 
 		if params.verbose:
 			progress(params.nsteps, params.nsteps)
 			print('')
 
 
-		grid = grid_old.copy()
+		grid = np.copy(grid_old)
 
+		grid = grid[int(grid.shape[0]/2 - 50):int(grid.shape[0]/2 + 50), int(grid.shape[0]/2 - 50):int(grid.shape[0]/2 + 50)]
+		print(grid.shape)
 		'''
         fname = '/extra/pob/Calibration_17m/' + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
 
@@ -1785,8 +1777,6 @@ class Model:
 		'''
 
 		if params.verbose:
-
-
 
 			if params.tracers_on:
 				ls = LightSource(azdeg=270, altdeg=30.0)
