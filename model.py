@@ -406,16 +406,15 @@ class ImpactorPopulation:
 		secondary_lams[secondary_lams < 0] = 0
 
 		# Make diameter bins the geometric average of each bin
-		diam_bins = diam_bins[0:-1]*np.sqrt(geom_factor)
+		diam_bins = diam_bins[0:-1]#*np.sqrt(geom_factor)
 
 		# Poisson sampling of the number of secondaries in each secondary crater diameter bin
 		num_secs_on_grid_arr = np.random.poisson(lam=secondary_lams, size=len(secondary_lams))*num_annuli_imps
 
 		# Add a random amount to each bin so diameters are uniformly spaced within the bin (instead of all at the geometric average)
-		#secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i]) + np.random.rand(num_secs_on_grid_arr[i])*(geom_factor*diam_bins[i] - diam_bins[i]) for i in range(len(diam_bins))])
+		secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i]) + np.random.rand(num_secs_on_grid_arr[i])*(geom_factor*diam_bins[i] - diam_bins[i]) for i in range(len(diam_bins))])
 		# For speedup, just use the geometric average
-		secondary_diameters =  np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i], dtype=np.float) for i in range(len(diam_bins))])
-
+		#secondary_diameters =  np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i], dtype=np.float) for i in range(len(diam_bins))])
 		return secondary_diameters
 
 	def grid_secondaries(self, r, D_p, D_min, D_max, r_body, grid_area, max_dist_for_sec, continuous_ejecta_blanket_factor):
@@ -443,14 +442,15 @@ class ImpactorPopulation:
 		secondary_lams[secondary_lams < 0] = 0.0
 
 		# Make diameter bins the geometri average of each bin
-		diam_bins = diam_bins[0:-1]*np.sqrt(geom_factor)
+		diam_bins = diam_bins[0:-1]#*np.sqrt(geom_factor)
 
 		# Poisson sampling of the number of secondaries in each secondary crater diameter bin
 		num_secs_on_grid_arr = np.random.poisson(lam=secondary_lams, size=len(secondary_lams))
 
 		# Add a random amount to each bin so diameters are uniformly spaced within the bin (instead of all at one of the edges or the geometric average)
-		#secondary_diameters = [diam_bins[i]*np.ones(num_secs_on_grid_arr[i]) + np.random.rand(num_secs_on_grid_arr[i])*(geom_factor*diam_bins[i] - diam_bins[i]) for i in range(len(diam_bins))]
-		secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i], dtype=np.float) for i in range(len(diam_bins))])
+		secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i]) + np.random.rand(num_secs_on_grid_arr[i])*(geom_factor*diam_bins[i] - diam_bins[i]) for i in range(len(diam_bins))])
+		# For speedup, just use the geometric average
+		#secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i], dtype=np.float) for i in range(len(diam_bins))])
 
 		return secondary_diameters
 
@@ -531,37 +531,37 @@ class ImpactorPopulation:
 								# Diameters of secondaries produced by this on-grid primary, sampled from the appropriate cumulative SFD
 								secondary_crater_diams = self.grid_secondaries(avg_dist_from_crater_center, D_p, min_crater, avg_D_max, r_body, secondary_area, max_dist_for_sec, continuous_ejecta_blanket_factor)
 
-								# Randomly sample distances from the primary for these diameters.  Must occur outside the continuous ejecta blanket and inside the maximum secondary distance
-								secondary_crater_dists = (continuous_ejecta_blanket_factor*(D_p/2.0)) + (max_dist_for_sec - (continuous_ejecta_blanket_factor*(D_p/2.0)))*np.random.rand(len(secondary_crater_diams))
+								if len(secondary_crater_diams) > 0:
+									# Randomly sample distances from the primary for these diameters.  Must occur outside the continuous ejecta blanket and inside the maximum secondary distance
+									secondary_crater_dists = (continuous_ejecta_blanket_factor*(D_p/2.0)) + (max_dist_for_sec - (continuous_ejecta_blanket_factor*(D_p/2.0)))*np.random.rand(len(secondary_crater_diams))
 
-								# Randomly sample azimuthal angles for secondaries between 0 and 2pi
-								secondary_crater_phis = (2.0*np.pi)*np.random.rand(len(secondary_crater_diams))
+									# Randomly sample azimuthal angles for secondaries between 0 and 2pi
+									secondary_crater_phis = (2.0*np.pi)*np.random.rand(len(secondary_crater_diams))
 
-								# Calculate x,y position of secondaries
-								secondary_crater_x_primary = secondary_crater_dists*np.cos(secondary_crater_phis) + x_crater*resolution
-								secondary_crater_y_primary = secondary_crater_dists*np.sin(secondary_crater_phis) + y_crater*resolution
+									# Calculate x,y position of secondaries
+									secondary_crater_x_primary = secondary_crater_dists*np.cos(secondary_crater_phis) + x_crater*resolution
+									secondary_crater_y_primary = secondary_crater_dists*np.sin(secondary_crater_phis) + y_crater*resolution
 
-								secondary_crater_x_pix = np.array(secondary_crater_x_primary/resolution).astype('int')
-								secondary_crater_y_pix = np.array(secondary_crater_y_primary/resolution).astype('int')
+									secondary_crater_x_pix = np.array(secondary_crater_x_primary/resolution).astype('int')
+									secondary_crater_y_pix = np.array(secondary_crater_y_primary/resolution).astype('int')
 
-								# Remove craters who land too far off the grid to influence elevations
-								dist_from_grid_center = np.hypot((secondary_crater_x_pix - grid_size/2), (secondary_crater_y_pix - grid_size/2))*resolution
-								max_dist_for_sec = np.sqrt(grid_width**2/2.0) + continuous_ejecta_blanket_factor*(secondary_crater_diams/2.0)
+									# Remove craters who land too far off the grid to influence elevations
+									dist_from_grid_center = np.hypot((secondary_crater_x_pix - grid_size/2), (secondary_crater_y_pix - grid_size/2))*resolution
+									max_dist_for_sec = np.sqrt(grid_width**2/2.0) + continuous_ejecta_blanket_factor*(secondary_crater_diams/2.0)
 
-								on_grid_secondaries = (dist_from_grid_center <= max_dist_for_sec)
+									on_grid_secondaries = (dist_from_grid_center <= max_dist_for_sec)
 
-								secondary_crater_diameters = secondary_crater_diams[on_grid_secondaries]
-								secondary_crater_x_pix = secondary_crater_x_pix[on_grid_secondaries]
-								secondary_crater_y_pix = secondary_crater_y_pix[on_grid_secondaries]
+									secondary_crater_diameters = secondary_crater_diams[on_grid_secondaries]
+									secondary_crater_x_pix = secondary_crater_x_pix[on_grid_secondaries]
+									secondary_crater_y_pix = secondary_crater_y_pix[on_grid_secondaries]
 
-								secondary_shallowing_factor = 0.5*(avg_dist_from_crater_center/(np.pi*body.radius_body) + 1.0)
+									secondary_shallowing_factor = 0.5*(avg_dist_from_crater_center/(np.pi*body.radius_body) + 1.0)
 
-								if len(secondary_crater_diameters) > 0:
-									timestep_diams.append(secondary_crater_diameters)
-									timestep_x.append(secondary_crater_x_pix)
-									timestep_y.append(secondary_crater_y_pix)
-									timestep_primary_index.append(secondary_shallowing_factor*np.ones(len(secondary_crater_diameters)))
-
+									if len(secondary_crater_diameters) > 0:
+										timestep_diams.append(secondary_crater_diameters)
+										timestep_x.append(secondary_crater_x_pix)
+										timestep_y.append(secondary_crater_y_pix)
+										timestep_primary_index.append(secondary_shallowing_factor*np.ones(len(secondary_crater_diameters)))
 
 			##### SECONDARY IMPACTS FROM OFF-GRID CRATERS #####
 			# Global craters in this diameter bin are large enough to potentially produce resolvable secondaries
