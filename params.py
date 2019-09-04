@@ -11,7 +11,7 @@ verbose = 1
 
 # Main processes on/off
 cratering_on = 1
-secondaries_on = 1
+secondaries_on = 0
 diffusion_on = 0
 implicit_diffusion = 1
 explicit_diffusion = 0
@@ -27,7 +27,7 @@ if full_run:
 
 elif noise_run:
 	resolution = (17.0/10.0)
-	grid_size = 200
+	grid_size = 100
 	grid_width = resolution*float(grid_size)
 
 # Initial state of the grid.  Flat or load in a cratered highlands surface (coming soon)
@@ -37,7 +37,7 @@ dx2 = resolution**2
 dy2 = resolution**2
 
 # Time
-model_time = 3.5e9	# Total model time in years
+model_time = 100.0e9	# Total model time in years
 nsteps = 100
 dt = float(model_time/nsteps)		# Model timestep in years
 
@@ -58,4 +58,4 @@ n_particles_per_layer = 25
 sampling_depth = 0.1
 surface_depth = 0.001
 
-#nsteps = 10
+#nsteps = 5
