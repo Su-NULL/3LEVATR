@@ -11,8 +11,8 @@ verbose = 1
 
 # Main processes on/off
 cratering_on = 1
-secondaries_on = 0
-diffusion_on = 0
+secondaries_on = 1
+diffusion_on = 1
 implicit_diffusion = 1
 explicit_diffusion = 0
 pixel_noise_on = 0
@@ -37,7 +37,7 @@ dx2 = resolution**2
 dy2 = resolution**2
 
 # Time
-model_time = 100.0e9	# Total model time in years
+model_time = 3.5e9	# Total model time in years
 nsteps = 100
 dt = float(model_time/nsteps)		# Model timestep in years
 

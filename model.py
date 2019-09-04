@@ -18,9 +18,10 @@ from scipy.optimize import minimize
 from scipy import interpolate
 import scipy
 import uuid
+import warnings
 
-#np.random.seed(np.random.randint(10000) + int(sys.argv[2]))
-np.random.seed(int(sys.argv[2]))
+np.random.seed(np.random.randint(10000) + int(sys.argv[2]))
+#np.random.seed(int(sys.argv[2]))
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 
 
@@ -145,9 +146,9 @@ class Grid:
 
 	def calc_scale_factor(self, diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size):
 
-		grid_size_new = int(3.0*diameter/res) + 2
-		if grid_size_new > grid_size:
-			grid_size = grid_size_new
+		grid_size_scale = int(3.0*diameter/res)
+		if grid_size_scale > grid_size:
+			grid_size = grid_size_scale
 			X_grid, Y_grid = np.ogrid[:grid_size, :grid_size]
 
 		x_crater = int(grid_size/2.0)
@@ -206,9 +207,9 @@ class Grid:
 		# Grid pixels covered by the ejecta blanket
 		ejecta_mask = (dist_from_center > radius) & (dist_from_center <= r_ejecta)
 
-		# Inheritance parameter, set as a constant, see Howard 2007, I=0 --> crater rim horizontal, I=1 --> crater rim parallel to pre-existing slope
-		I_i = 0.9
+		full_crater_mask = dist_from_center <= r_ejecta
 
+		'''
 		weighted_grid = np.copy(grid)
 		outside_mask = dist_from_center > radius
 
@@ -222,45 +223,66 @@ class Grid:
 			E_r = np.average(weighted_grid[outside_mask])
 		else:
 			E_r = np.zeros((grid_size, grid_size))
-
-		# Crater elevation profile
-		delta_H_crater = (((dist_from_center/radius)**2)*(rim_height + depth)) - depth
-
-		# Ejecta elevation profile
-		with np.errstate(divide='ignore'):    # Divide by zero at r=0 but we don't care about that point since it's interior to the ejecta blanket
-			delta_H_ejecta = rim_height*((dist_from_center/radius)**-3) - (rim_height/54.0)*((dist_from_center/radius) - 1.0)
-
-		# Inheritance matrices - determines how the crater is integrated into the existing grid
-		G_grid = (1.0 - I_i)*ones_grid
-		min_mask = G_grid > delta_H_ejecta/rim_height
-		G_grid[min_mask] = delta_H_ejecta[min_mask]/rim_height
-
-		crater_inh_profile = (1.0 - I_i*((dist_from_center/radius)**2.0))*(E_r - current_grid)
-		ejecta_inh_profile = G_grid*(E_r - current_grid)
-
-		delta_E_crater = delta_H_crater + crater_inh_profile
-		delta_E_ejecta = delta_H_ejecta + ejecta_inh_profile
-
-		# Add calculated elevations to the grid at the corresponding pixels
-		#grid[crater_mask] += delta_E_crater[crater_mask]
-		#grid[ejecta_mask] += delta_E_ejecta[ejecta_mask]
-
-		crater_grid = np.zeros((grid_size, grid_size))
-		crater_grid[crater_mask] = delta_E_crater[crater_mask]
-		crater_grid[ejecta_mask] = delta_E_ejecta[ejecta_mask]
-
-		scaling_factor = self.calc_scale_factor(diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size)
 		'''
-		if diameter <= (1000.0*res):
-			scaling_factor = self.calc_scale_factor(diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size)
+		if np.sum(crater_mask) == 0 and np.sum(ejecta_mask) == 0:
+			# Crater does not actually overlap the grid. These cases are included for completeness, simply return the pre-crater grid
+			ret_grid = np.copy(current_grid)
+
 		else:
-			scaling_factor = 1.0
-		'''
-		crater_grid[np.where(crater_grid < 0.0)] *= scaling_factor
+			# Crater somewhat overlaps the grid
+			# Inheritance parameter, set as a constant, see Howard 2007, I=0 --> crater rim horizontal, I=1 --> crater rim parallel to pre-existing slope
+			I_i = 0.9
 
-		grid += crater_grid
+			# Reference elevation is the average of the pre-crater grid within the crater area
+			# Creter interior weighted by 1, ejecta blanket weighted by (distance/radius)**-n, n=3
+			weights = np.copy(ones_grid)
+			outside_mask = dist_from_center > radius
 
-		return grid
+			weights[outside_mask] = (dist_from_center[outside_mask]/radius)**(-3)
+			weighted_grid = current_grid*weights
+
+			E_r = np.average(weighted_grid[full_crater_mask])
+
+			# Crater elevation profile
+			delta_H_crater = (((dist_from_center/radius)**2)*(rim_height + depth)) - depth
+
+			# Ejecta elevation profile
+			with np.errstate(divide='ignore'):    # Divide by zero at r=0 but we don't care about that point since it's interior to the ejecta blanket
+				delta_H_ejecta = rim_height*((dist_from_center/radius)**-3) - (rim_height/54.0)*((dist_from_center/radius) - 1.0)
+
+			# Inheritance matrices - determines how the crater is integrated into the existing grid
+			G_grid = (1.0 - I_i)*ones_grid
+			min_mask = G_grid > delta_H_ejecta/rim_height
+			G_grid[min_mask] = delta_H_ejecta[min_mask]/rim_height
+
+			crater_inh_profile = (E_r - current_grid)*(1.0 - (I_i*(dist_from_center/radius)**2))
+			ejecta_inh_profile = G_grid*(E_r - current_grid)
+
+			delta_E_crater = delta_H_crater + crater_inh_profile
+			delta_E_ejecta = delta_H_ejecta + ejecta_inh_profile
+
+			# Add calculated elevations to the grid at the corresponding pixels
+			#grid[crater_mask] += delta_E_crater[crater_mask]
+			#grid[ejecta_mask] += delta_E_ejecta[ejecta_mask]
+
+			crater_grid = np.zeros((grid_size, grid_size))
+			crater_grid[crater_mask] = delta_E_crater[crater_mask]
+			crater_grid[ejecta_mask] = delta_E_ejecta[ejecta_mask]
+
+			scaling_factor = self.calc_scale_factor(diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size)
+
+			if diameter <= (params.grid_width/3.0):
+				scaling_factor = self.calc_scale_factor(diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size)
+			else:
+				scaling_factor = 1.0
+
+			crater_grid[np.where(crater_grid < 0.0)] *= scaling_factor
+
+			current_grid += crater_grid
+
+			ret_grid = np.copy(current_grid)
+
+		return ret_grid
 
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 
@@ -519,7 +541,7 @@ class ImpactorPopulation:
 
 	def sample_timestep_craters(self, t, avg_imp_diam, primary_lams, max_grid_dist, avg_crater_diam, num_inc, dt, min_crater, resolution, grid_size, grid_width, min_primary_for_secondaries, secondaries_on, r_body, continuous_ejecta_blanket_factor, X_grid, Y_grid):
 
-		#np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))
+		np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))
 
 		timestep_diams = []
 		timestep_x = []
@@ -1525,15 +1547,6 @@ class Model:
 
 			d_craters, x_craters, y_craters, index_craters, t_craters, dist_secs = impPop.sample_all_craters()
 
-			'''
-			mask = np.where(d_craters <= (float(grid_size)*resolution/10.0))
-			d_craters = d_craters[mask]
-			x_craters = x_craters[mask]
-			y_craters = y_craters[mask]
-			index_craters = index_craters[mask]
-			t_craters = t_craters[mask]
-			#dist_secs = dist_secs[mask]
-			'''
 			if params.verbose:
 				if params.secondaries_on:
 
@@ -1560,7 +1573,7 @@ class Model:
 					plt.hist(index_craters)
 					plt.xlabel('Crater index (m)')
 					plt.subplot(222)
-					plt.hist(t_craters)
+					plt.hist(t_craters, bins=params.nsteps)
 					plt.xlabel('Timestep')
 					plt.subplot(224)
 					plt.hist(dist_secs/1000.0)
@@ -1615,7 +1628,7 @@ class Model:
 		median_elev_arr = np.zeros(params.nsteps)
 
 		for t in range(params.nsteps):
-			#np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))
+			np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))
 
 			if params.cratering_on:
 				##### ------------------------------------------------------------------------- #####
@@ -1647,11 +1660,13 @@ class Model:
 
 					x_crater_pix = int(current_x[i])
 					y_crater_pix = int(current_y[i])
+
 					'''
-					crater_diam = 4.2
+					crater_diam = 50.0
 					x_crater_pix = int(grid_size/2.0)
 					y_crater_pix = int(grid_size/2.0)
 					'''
+
 					grid_new = grid.add_crater(np.copy(grid_old), x_crater_pix, y_crater_pix, crater_diam, resolution, crater_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid)
 
 					if params.tracers_on:
@@ -1910,7 +1925,8 @@ class Model:
 				plt.xlabel('Time (Myr)')
 				plt.ylabel('Median slope (deg)')
 				plt.subplot(122)
-				plt.plot(np.arange(len(median_slope_arr))*params.dt/(1.e6), median_elev_arr)
+				#plt.plot(np.arange(len(median_slope_arr))*params.dt/(1.e6), median_elev_arr)
+				plt.plot(np.arange(params.nsteps), median_elev_arr)
 				plt.axhline(0.0, color='k', linestyle='--')
 				plt.xlabel('Time (Myr)')
 				plt.ylabel('Mean grid elevation (m)')
