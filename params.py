@@ -15,10 +15,10 @@ secondaries_on = 1
 diffusion_on = 1
 implicit_diffusion = 1
 explicit_diffusion = 0
-pixel_noise_on = 0
+pixel_noise_on = 1
 
 # Tracers on/off
-tracers_on = 0
+tracers_on = 1
 
 if full_run:
 	resolution = 17.0
@@ -52,10 +52,10 @@ min_primary_for_secondaries = (min_crater)/(max_secondary_factor)	# Smallest pri
 diffusivity = []
 
 # Tracer particles
-n_particles_per_layer = 25
+n_particles_per_layer = 10
 
 # Sampling
 sampling_depth = 0.1
 surface_depth = 0.001
 
-#nsteps = 5
+nsteps = 5

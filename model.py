@@ -1443,19 +1443,31 @@ class Tracer:
 			return [x_p, y_p, z_p]
 
 
-		def tracer_particle_noise(self, x_p0, y_p0, z_p0, grid_old, grid_new):
+		def tracer_particle_noise(self, x_p0, y_p0, z_p0, grid_old, noise):
 			# Movement of tracer particles from the addition of sub-pixel cratering
 			# Particles are not moved horizontally.  If cratering removes material from the particle's pixel and excavates the particle to be above the surface,
 			# Place the particle on the new surface at the same pixel
 
-			if z_p0 > grid_new[x_p0, y_p0]:
+			# Change particle z-position
+			if noise == 0.0:
+				z_p_new = z_p0
+
+			elif noise < 0.0:
+				z_p_new = z_p0 + abs(noise)
+
+			elif noise > 0.0:
+				z_p_new = z_p0 - abs(noise)
+
+			# Check if particle has been unearthed above the pixel reference elevation
+			if z_p_new > grid_old[x_p0, y_p0]:
 				x_p = x_p0
 				y_p = y_p0
-				z_p = grid_new[x_p, y_p]
+				z_p = grid_old[x_p, y_p]
+
 			else:
 				x_p = x_p0
 				y_p = y_p0
-				z_p = z_p0
+				z_p = z_p_new
 
 			return [x_p, y_p, z_p]
 
@@ -1693,12 +1705,6 @@ class Model:
 				##### ------------------------------------------------------------------------- #####
 				# SUB-PIXEL NOISE
 
-				#noise_grid = np.random.choice(params.noise_arr, (params.grid_size, params.grid_size))*np.random.choice([-1.0, 1.0], (params.grid_size, params.grid_size))
-
-				noise_grid = -1.0*np.abs(np.random.choice(params.noise_arr, (params.grid_size, params.grid_size)))
-
-				grid_new = grid_old + noise_grid
-
 				if params.tracers_on:
 					##### -------------------- #####
 					# TRACERS
@@ -1715,7 +1721,9 @@ class Model:
 							y_p0 = int(y_p0)
 							z_p0 = z_p0
 
-							particle_position_new = tracers[j].tracer_particle_noise(x_p0, y_p0, z_p0, grid_old, grid_new)
+							noise = np.random.rand()*np.random.choice([1.0, -1.0])
+
+							particle_position_new = tracers[j].tracer_particle_noise(x_p0, y_p0, z_p0, grid_old, noise)
 
 							tracers[j].update_position(particle_position_new)
 					##### -------------------- #####
@@ -1815,24 +1823,23 @@ class Model:
 				plt.imshow(ls.hillshade(grid.T, dx=params.resolution, dy=params.resolution), extent=(0, params.grid_width, 0, params.grid_width), cmap='gray')
 				plt.subplot(222)
 				plt.imshow(grid.T)
+				for j in range(len(tracers)):
+					pos = tracers[j].current_position()
+					plt.scatter(pos[0], pos[1], c='r', s=2)
+				plt.xlabel('Distance (pixels)')
+				plt.ylabel('Distance (pixels)')
+				plt.title('Final landscape')
 
 				plt.figure()
-				plt.subplot(121)
+				plt.subplot(221)
 				plt.plot(np.arange(len(median_slope_arr))*params.dt/(1.e6), median_slope_arr)
 				plt.xlabel('Time (Myr)')
 				plt.ylabel('Median slope (deg)')
-				plt.subplot(122)
+				plt.subplot(222)
 				plt.plot(np.arange(len(median_slope_arr))*params.dt/(1.e6), median_elev_arr)
 				plt.axhline(0.0, color='k', linestyle='--')
 				plt.xlabel('Time (Myr)')
 				plt.ylabel('Mean grid elevation (m)')
-
-				for j in range(len(tracers)):
-					pos = tracers[j].current_position()
-					plt.scatter(pos[0], pos[1], c='r', s=2)
-				plt.xlabel('Distance (m)')
-				plt.ylabel('Distance (m)')
-				plt.title('Final landscape')
 
 
 				surf_res = []
@@ -1869,7 +1876,7 @@ class Model:
 
 				print('')
 				runtime = time()- starttime
-				print('Runtime (min): {}'.format(runtime/3600.0))
+				print('Runtime (min): {}'.format(runtime/60.0))
 				print('')
 
 			else:
