@@ -18,10 +18,10 @@ from scipy.optimize import minimize
 from scipy import interpolate
 import scipy
 import uuid
-import warnings
+import gc
 
+gc.collect()
 np.random.seed(np.random.randint(10000) + int(sys.argv[2]))
-#np.random.seed(int(sys.argv[2]))
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 
 
@@ -209,21 +209,6 @@ class Grid:
 
 		full_crater_mask = dist_from_center <= r_ejecta
 
-		'''
-		weighted_grid = np.copy(grid)
-		outside_mask = dist_from_center > radius
-
-		weighted_grid[outside_mask] = current_grid[outside_mask]*(1.0/dist_from_center[outside_mask])
-
-		if np.max(crater_mask) > 0.0 and np.max(ejecta_mask) > 0.0:
-			E_r = np.average(weighted_grid[crater_mask]) + np.average(weighted_grid[outside_mask])
-		elif np.max(crater_mask) > 0.0:
-			E_r = np.average(weighted_grid[crater_mask])
-		elif np.max(ejecta_mask > 0.0):
-			E_r = np.average(weighted_grid[outside_mask])
-		else:
-			E_r = np.zeros((grid_size, grid_size))
-		'''
 		if np.sum(crater_mask) == 0 and np.sum(ejecta_mask) == 0:
 			# Crater does not actually overlap the grid. These cases are included for completeness, simply return the pre-crater grid
 			ret_grid = np.copy(current_grid)
@@ -268,8 +253,6 @@ class Grid:
 			crater_grid = np.zeros((grid_size, grid_size))
 			crater_grid[crater_mask] = delta_E_crater[crater_mask]
 			crater_grid[ejecta_mask] = delta_E_ejecta[ejecta_mask]
-
-			scaling_factor = self.calc_scale_factor(diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size)
 
 			if diameter <= (params.grid_width/3.0):
 				scaling_factor = self.calc_scale_factor(diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size)
@@ -696,11 +679,7 @@ class ImpactorPopulation:
 
 						# Number of primary impacts of the current diameter in this annulus at the current timestep
 						num_annuli_imps = num_annuli_imps_arr[j]
-						'''
-						# Loop through each primary impact and compute all secondaries from that impact that overlap the grid
-						for k in range(num_annuli_imps):
-							annulus_secondary_diameters.append(self.secondaries(avg_dist, D_p, min_crater, max_sec_diam, r_body, max_sec_area, max_dist_for_sec, num_annuli_imps))
-						'''
+
 						if num_annuli_imps > 0:
 							annulus_secondary_diameters.append(self.secondaries(avg_dist, D_p, min_crater, max_sec_diam, r_body, max_sec_area, max_dist_for_sec, num_annuli_imps))
 
@@ -1547,6 +1526,8 @@ class Model:
 
 			d_craters, x_craters, y_craters, index_craters, t_craters, dist_secs = impPop.sample_all_craters()
 
+			gc.collect()
+
 			if params.verbose:
 				if params.secondaries_on:
 
@@ -1661,12 +1642,6 @@ class Model:
 					x_crater_pix = int(current_x[i])
 					y_crater_pix = int(current_y[i])
 
-					'''
-					crater_diam = 50.0
-					x_crater_pix = int(grid_size/2.0)
-					y_crater_pix = int(grid_size/2.0)
-					'''
-
 					grid_new = grid.add_crater(np.copy(grid_old), x_crater_pix, y_crater_pix, crater_diam, resolution, crater_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid)
 
 					if params.tracers_on:
@@ -1721,14 +1696,7 @@ class Model:
 				#noise_grid = np.random.choice(params.noise_arr, (params.grid_size, params.grid_size))*np.random.choice([-1.0, 1.0], (params.grid_size, params.grid_size))
 
 				noise_grid = -1.0*np.abs(np.random.choice(params.noise_arr, (params.grid_size, params.grid_size)))
-				#noise_grid = -0.05*np.ones((params.grid_size, params.grid_size))
 
-				'''
-				plt.figure()
-				plt.hist(noise_grid.flatten(), bins=50)
-				plt.show()
-				sys.exit()
-				'''
 				grid_new = grid_old + noise_grid
 
 				if params.tracers_on:
@@ -1753,7 +1721,7 @@ class Model:
 					##### -------------------- #####
 
 				# Update grid after noise
-				grid_old = grid_new.copy()
+				grid_old = np.copy(grid_new)
 
 			if params.diffusion_on:
 				##### --------------------------------------------------------------------- #####
@@ -1780,7 +1748,7 @@ class Model:
 					##### -------------------- #####
 
 				# Update grid after diffusion
-				grid_old = grid_new.copy()
+				grid_old = np.copy(grid_new)
 
 			if params.tracers_on:
 				##### -------------------- #####
@@ -1820,6 +1788,8 @@ class Model:
 			median_slope_arr[t] = (median_slope)
 			median_elev_arr[t] = np.average(grid_old)
 
+			gc.collect()
+
 		if params.verbose:
 			progress(params.nsteps, params.nsteps)
 			print('')
@@ -1833,15 +1803,7 @@ class Model:
         np.savetxt(fname, grid)
 		'''
 
-		'''
-		grid = grid_old.copy()
-
-		x_slope, y_slope = np.gradient(grid, params.resolution)
-		slope_grid = np.rad2deg(np.arctan(np.sqrt( x_slope**2 + y_slope**2)))
-		slope_grid = slope_grid[1:-1, 1:-1]
-
-		median_slope = np.median(abs(slope_grid.flatten()))
-		'''
+		gc.collect()
 
 		if params.verbose:
 

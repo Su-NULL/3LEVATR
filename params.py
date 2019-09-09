@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import sys
 
 # Type of run
-full_run = 0
-noise_run = 1
+full_run = 1
+noise_run = 0
 verbose = 1
 
 # Main processes on/off
@@ -26,7 +26,7 @@ if full_run:
 	grid_width = resolution*float(grid_size)
 
 elif noise_run:
-	resolution = (17.0/10.0)
+	resolution = 1.7
 	grid_size = 100
 	grid_width = resolution*float(grid_size)
 
