@@ -19,9 +19,12 @@ from scipy import interpolate
 import scipy
 import uuid
 import gc
+import tracemalloc
+tracemalloc.start()
 
 gc.collect()
 np.random.seed(np.random.randint(10000) + int(sys.argv[2]))
+#np.random.seed(int(sys.argv[2]))
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 
 
@@ -1721,7 +1724,7 @@ class Model:
 							y_p0 = int(y_p0)
 							z_p0 = z_p0
 
-							noise = np.random.rand()*np.random.choice([1.0, -1.0])
+							noise = -1.0*(0.01*np.random.rand())#*np.random.choice([1.0, -1.0])
 
 							particle_position_new = tracers[j].tracer_particle_noise(x_p0, y_p0, z_p0, grid_old, noise)
 
@@ -1802,13 +1805,15 @@ class Model:
 			progress(params.nsteps, params.nsteps)
 			print('')
 
-
-		grid = np.copy(grid_old)
+		current, peak =  tracemalloc.get_traced_memory()
+		print()
+		print('Current (Gb): {}, Peak (Gb): {}'.format(current/(1.e9), peak/(1.e9)))
+		tracemalloc.stop()
 
 		'''
-        fname = '/extra/pob/Calibration_17m/' + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
+        fname = '/extra/pob/NoiseCalibration_1.7m/' + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
 
-        np.savetxt(fname, grid)
+        np.savetxt(fname, grid_old)
 		'''
 
 		gc.collect()
@@ -1819,16 +1824,16 @@ class Model:
 				ls = LightSource(azdeg=270, altdeg=30.0)
 
 				plt.figure()
-				plt.subplot(221)
-				plt.imshow(ls.hillshade(grid.T, dx=params.resolution, dy=params.resolution), extent=(0, params.grid_width, 0, params.grid_width), cmap='gray')
-				plt.subplot(222)
-				plt.imshow(grid.T)
+				plt.subplot(121)
+				plt.imshow(ls.hillshade(grid_old.T, dx=params.resolution, dy=params.resolution), extent=(0, params.grid_width, 0, params.grid_width), cmap='gray')
+				plt.xlabel('Distance (m)')
+				plt.ylabel('Distance (m)')
+				plt.title('Final landscape')
+				plt.subplot(122)
+				plt.imshow(grid_old.T)
 				for j in range(len(tracers)):
 					pos = tracers[j].current_position()
 					plt.scatter(pos[0], pos[1], c='r', s=2)
-				plt.xlabel('Distance (pixels)')
-				plt.ylabel('Distance (pixels)')
-				plt.title('Final landscape')
 
 				plt.figure()
 				plt.subplot(221)
@@ -1870,7 +1875,7 @@ class Model:
 
 				print('Total model time: {}'.format((params.nsteps)*params.dt/(1.e9)))
 				print('Particles lost: {}'.format(lost_count))
-				print('Sampled particles: {}'.format(sample_count))
+				print('Sampled particles: {} / {}'.format(sample_count, str(params.n_particles_per_layer**3)))
 				print('Surface residence: ', np.nanmin(surf_res), np.nanmax(surf_res))
 				print('Median slope: {} degrees'.format(median_slope))
 
@@ -1884,9 +1889,9 @@ class Model:
 
 				plt.figure()
 				plt.subplot(121)
-				plt.imshow(ls.hillshade(grid.T, dx=params.resolution, dy=params.resolution), extent=(0, params.grid_width, 0, params.grid_width), cmap='gray')
+				plt.imshow(ls.hillshade(grid_old.T, dx=params.resolution, dy=params.resolution), extent=(0, params.grid_width, 0, params.grid_width), cmap='gray')
 				plt.subplot(122)
-				plt.imshow(grid.T)
+				plt.imshow(grid_old.T)
 
 				plt.figure()
 				plt.subplot(121)

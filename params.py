@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import sys
 
 # Type of run
-full_run = 1
-noise_run = 0
+full_run = 0
+noise_run = 1
 verbose = 1
 
 # Main processes on/off
@@ -15,10 +15,10 @@ secondaries_on = 1
 diffusion_on = 1
 implicit_diffusion = 1
 explicit_diffusion = 0
-pixel_noise_on = 1
+pixel_noise_on = 0
 
 # Tracers on/off
-tracers_on = 1
+tracers_on = 0
 
 if full_run:
 	resolution = 17.0
@@ -52,10 +52,10 @@ min_primary_for_secondaries = (min_crater)/(max_secondary_factor)	# Smallest pri
 diffusivity = []
 
 # Tracer particles
-n_particles_per_layer = 10
+n_particles_per_layer = 100
 
 # Sampling
 sampling_depth = 0.1
 surface_depth = 0.001
 
-nsteps = 5
+#nsteps = 5
