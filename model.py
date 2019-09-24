@@ -19,8 +19,16 @@ from scipy import interpolate
 import scipy
 import uuid
 import gc
+import scipy.stats as st
+
+'''
 import tracemalloc
 tracemalloc.start()
+current, peak =  tracemalloc.get_traced_memory()
+print()
+print('Current (Gb): {}, Peak (Gb): {}'.format(current/(1.e9), peak/(1.e9)))
+tracemalloc.stop()
+'''
 
 gc.collect()
 np.random.seed(np.random.randint(10000) + int(sys.argv[2]))
@@ -871,21 +879,32 @@ class Tracer:
 			resolution = params.resolution
 
 			if np.isnan(particle_pos[0]):
-			# CLASS 0 - NaN particle passed to function
-			# Should not happen, but if it does just return NaNs again
+				# CLASS 0 - NaN particle passed to function
+				# Should not happen, but if it does just return NaNs again
 				x_p = np.nan
 				y_p = np.nan
 				z_p = np.nan
+				print('NaN particle passed to function')
 
 			elif particle_pos[0] == 0 or particle_pos[0] == (grid_size-1) or particle_pos[1] == 0 or particle_pos[1] == (grid_size-1):
-			# CLASS 1 - Particle starts on the edge of the grid
-			# Cannot compute elevation difference in at least one direction so particle is lost
-				x_p = np.nan
-				y_p = np.nan
-				z_p = np.nan
+				# CLASS 1 - Particle starts on the edge of the grid
+				# Cannot compute elevation difference in at least one direction so particle is lost
+
+				# If periodic particles, add a new particle at a random position at the same depth as the lost particle
+				# If not, particle is lost to the model
+				if params.periodic_particles:
+					d_p0 = z_old - z_p
+
+					x_p = int(np.random.randint(low=0, high=grid_size))
+					y_p = int(np.random.randint(low=0, high=grid_size))
+					z_p = z[x_p, y_p] - d_p0	# Place particle randomly on the grid at the particle's initial depth since we didn't compute a new position for it
+				else:
+					x_p = np.nan
+					y_p = np.nan
+					z_p = np.nan
 
 			else:
-			# CLASS 2 - Particle possibly moved by diffusion
+				# CLASS 2 - Particle possibly moved by diffusion
 				x_p = int(round(particle_pos[0]))
 				y_p = int(round(particle_pos[1]))
 				z_p = particle_pos[2]
@@ -895,15 +914,15 @@ class Tracer:
 				d_p0 = z_old - z_p
 
 				if z_p < z_new:
-				# SCENARIO 1 - Particle still at or below the surface after the elevation change from diffusion.  Particle remains where it is
+					# SCENARIO 1 - Particle still at or below the surface after the elevation change from diffusion.  Particle remains where it is
 					x_p = int(x_p)
 					y_p = int(y_p)
 					z_p = z_p
 					# FINAL PARTICLE POSITION DETERMINED - C2:S1
 
 				elif z_p >= z_new:
-				# SCENARIO 2 - Diffusion elevation change at the particle's position would put it at negative depth.
-				# Particle moves one pixel in the steepest downhill direction
+					# SCENARIO 2 - Diffusion elevation change at the particle's position would put it at negative depth.
+					# Particle moves one pixel in the steepest downhill direction
 					delta_h = z_old - z_new		# Change in elevation at the current pixel
 
 					# Possible directions to move, I will be going from left to right then down to the next row
@@ -959,16 +978,25 @@ class Tracer:
 					x_p += x_change[max_slope_dir]
 					y_p += y_change[max_slope_dir]
 
-					if 0 <= x_p <= (grid_size-1) and 0 <= y_p <= (grid_size):
-					# Particle moves somewhere on the grid.  Placed at a depth correspondingly inversely to its initial depth (layers are flipped as material near the surface moves downslope first, followed by material buried deeper)
+					if 0 <= x_p <= (grid_size-1) and 0 <= y_p <= (grid_size-1):
+						# Particle moves somewhere on the grid.  Placed at a depth correspondingly inversely to its initial depth (layers are flipped as material near the surface moves downslope first, followed by material buried deeper)
 						x_p = int(round(x_p))
 						y_p = int(round(y_p))
 						z_p = z[x_p, y_p] - delta_h + d_p0
 					else:
-					# Particle moves off the grid
-						x_p = np.nan
-						y_p = np.nan
-						z_p = np.nan
+						# Particle diffuses off the grid
+
+						if params.periodic_particles:
+							d_p0 = z_old - z_p
+
+							x_p = int(np.random.randint(low=0, high=grid_size))
+							y_p = int(np.random.randint(low=0, high=grid_size))
+							z_p = z[x_p, y_p] - abs(-delta_h + d_p0)	# Place particle randomly on the grid at depth that depends inversely on its initial depth and on the amount of material that diffused from its initial pixel.
+																		# This is the same as we do for particles that diffuse on the grid, now assuming that the off-grid elevation is zero everywhere. z_p = 0 - delta_h + d_p0
+						else:
+							x_p = np.nan
+							y_p = np.nan
+							z_p = np.nan
 					# FINAL PARTICLE POSITION DETERMINED - C2:S2
 
 			return [x_p, y_p, z_p]
@@ -1060,10 +1088,18 @@ class Tracer:
 						# SCENARIO 1: Obliteration
 						if print_on:
 							print('CLASS 2 - SCENARIO 1')
-						# Particle on the surface at the impact site
-						x_p = np.nan
-						y_p = np.nan
-						z_p = np.nan
+						# Particle on the surface at the impact site and is obliterated
+
+						# If periodic particles, add a new particle at a random position at the same depth as the lost particle
+						# If not, particle is lost to the model
+						if params.periodic_particles:
+							x_p = int(np.random.randint(low=0, high=grid_size))
+							y_p = int(np.random.randint(low=0, high=grid_size))
+							z_p = grid_new[x_p, y_p]
+						else:
+							x_p = np.nan
+							y_p = np.nan
+							z_p = np.nan
 						# FINAL PARTICLE POSITION DETERMINED - C2:S1
 
 						if plot_on:
@@ -1137,9 +1173,17 @@ class Tracer:
 								plt.plot(x_p, z_p, 'ro', markersize=3)
 						else:
 							# Particle lands off the grid
-							x_p = np.nan
-							y_p = np.nan
-							z_p = np.nan
+
+							# If periodic particles, add a new particle at a random position at the same depth as the lost particle
+							# If not, particle is lost to the model
+							if params.periodic_particles:
+								x_p = int(np.random.randint(low=0, high=grid_size))
+								y_p = int(np.random.randint(low=0, high=grid_size))
+								z_p = grid_new[x_p, y_p]
+							else:
+								x_p = np.nan
+								y_p = np.nan
+								z_p = np.nan
 
 							if plot_on:
 								plt.plot(x_p0, z_p0, 'cX')
@@ -1175,9 +1219,17 @@ class Tracer:
 								plt.plot([x_p0, x_p], [z_p0, z_p], 'b--')
 						else:
 							# Particle lands off the grid
-							x_p = np.nan
-							y_p = np.nan
-							z_p = np.nan
+
+							# If periodic particles, add a new particle at a random position at the same depth as the lost particle
+							# If not, particle is lost to the model
+							if params.periodic_particles:
+								x_p = int(np.random.randint(low=0, high=grid_size))
+								y_p = int(np.random.randint(low=0, high=grid_size))
+								z_p = grid_new[x_p, y_p]
+							else:
+								x_p = np.nan
+								y_p = np.nan
+								z_p = np.nan
 
 							if plot_on:
 								##### For plotting purposes only
@@ -1361,9 +1413,17 @@ class Tracer:
 
 							else:
 								# Particle lands off the grid
-								x_p = np.nan
-								y_p = np.nan
-								z_p = np.nan
+
+								# If periodic particles, add a new particle at a random position at the same depth as the lost particle
+								# If not, particle is lost to the model
+								if params.periodic_particles:
+									x_p = int(np.random.randint(low=0, high=grid_size))
+									y_p = int(np.random.randint(low=0, high=grid_size))
+									z_p = grid_new[x_p, y_p]
+								else:
+									x_p = np.nan
+									y_p = np.nan
+									z_p = np.nan
 
 								if plot_on:
 
@@ -1428,6 +1488,19 @@ class Tracer:
 									plt.plot(x_p, z_p, 'ro', markersize=3)
 							else:
 								# Particle flows off the grid
+
+								# If periodic particles, add a new particle at a random position at the same depth as the lost particle
+								# If not, particle is lost to the model
+								if params.periodic_particles:
+									x_p = int(np.random.randint(low=0, high=grid_size))
+									y_p = int(np.random.randint(low=0, high=grid_size))
+									z_p = grid_new[x_p, y_p] - abs(z_flow)		# Assume that the surface outside the grid is zero everywhere.
+																				# Particle would then be buried at a depth of z_flow so place it randomly on the grid at that depth
+								else:
+									x_p = np.nan
+									y_p = np.nan
+									z_p = np.nan
+
 								x_p = np.nan
 								y_p = np.nan
 								z_p = np.nan
@@ -1445,6 +1518,16 @@ class Tracer:
 
 			return [x_p, y_p, z_p]
 
+
+		def sample_noise_val(self):
+			# Sample elevation noise values from a given distribution
+			dist = st.johnsonsu
+
+			params = [0.6770104087921859, 1.0628725212933858, 0.13541510014545288, 0.13146868133523265]
+
+			noise_val = dist.rvs(params[0], params[1], params[2], size=1)[0]
+
+			return noise_val
 
 		def tracer_particle_noise(self, x_p0, y_p0, z_p0, grid_old, noise):
 			# Movement of tracer particles from the addition of sub-pixel cratering
@@ -1712,6 +1795,7 @@ class Model:
 					##### -------------------- #####
 					# TRACERS
 					# Effect of addition of sub-pixel noise on tracer particles
+
 					for j in range(len(tracers)):
 						particle_position = tracers[j].current_position()
 
@@ -1724,7 +1808,7 @@ class Model:
 							y_p0 = int(y_p0)
 							z_p0 = z_p0
 
-							noise = -1.0*(0.01*np.random.rand())#*np.random.choice([1.0, -1.0])
+							noise = tracers[j].sample_noise_val()
 
 							particle_position_new = tracers[j].tracer_particle_noise(x_p0, y_p0, z_p0, grid_old, noise)
 
@@ -1732,7 +1816,7 @@ class Model:
 					##### -------------------- #####
 
 				# Update grid after noise
-				grid_old = np.copy(grid_new)
+				#grid_old = np.copy(grid_new)
 
 			if params.diffusion_on:
 				##### --------------------------------------------------------------------- #####
@@ -1805,10 +1889,8 @@ class Model:
 			progress(params.nsteps, params.nsteps)
 			print('')
 
-		current, peak =  tracemalloc.get_traced_memory()
-		print()
-		print('Current (Gb): {}, Peak (Gb): {}'.format(current/(1.e9), peak/(1.e9)))
-		tracemalloc.stop()
+		fname = 'surf_grid_example_' + str(sys.argv[1])[-2:] + '.txt'
+		np.savetxt(fname, grid_old)
 
 		'''
         fname = '/extra/pob/NoiseCalibration_1.7m/' + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
@@ -1868,9 +1950,9 @@ class Model:
 						lost_count += 1
 				surf_res = np.array(surf_res)/(1.e9)
 				plt.subplot(224)
-				plt.hist(surf_res, density=True)
+				plt.hist(surf_res, bins=int(np.ceil(np.sqrt(len(surf_res)))), density=True)
 				plt.xlabel('Surface residence time (Gyr)')
-				plt.ylabel('Normalized Count')
+				plt.ylabel('Normalized Frequency')
 				plt.title('Residence times of tracer particles - sample depth:{} (m)'.format(params.sampling_depth))
 
 				print('Total model time: {}'.format((params.nsteps)*params.dt/(1.e9)))
