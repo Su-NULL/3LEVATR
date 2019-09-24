@@ -893,7 +893,10 @@ class Tracer:
 				# If periodic particles, add a new particle at a random position at the same depth as the lost particle
 				# If not, particle is lost to the model
 				if params.periodic_particles:
-					d_p0 = z_old - z_p
+					x_p0 = int(round(particle_pos[0]))
+					y_p0 = int(round(particle_pos[1]))
+					z_p0 = particle_pos[2]
+					d_p0 = z0[x_p0, y_p0] - z_p0
 
 					x_p = int(np.random.randint(low=0, high=grid_size))
 					y_p = int(np.random.randint(low=0, high=grid_size))
