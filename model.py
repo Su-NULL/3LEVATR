@@ -1892,9 +1892,6 @@ class Model:
 			progress(params.nsteps, params.nsteps)
 			print('')
 
-		fname = 'surf_grid_example_' + str(sys.argv[1])[-2:] + '.txt'
-		np.savetxt(fname, grid_old)
-
 		'''
         fname = '/extra/pob/NoiseCalibration_1.7m/' + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
 
@@ -1902,6 +1899,23 @@ class Model:
 		'''
 
 		gc.collect()
+
+		if params.tracers_on:
+			if params.save_trajectories:
+				# Trajectory for all particles (x, y, z, depth, slope)
+				trajectory = np.zeros((len(tracers), params.nsteps, 5))
+
+				for j in range(len(tracers)):
+					trajectory[j,:,0] = tracers[j].x_arr
+					trajectory[j,:,1] = tracers[j].y_arr
+					trajectory[j,:,2] = tracers[j].z_arr
+					trajectory[j,:,3] = tracers[j].d_arr
+					trajectory[j,:,4] = tracers[j].slope_arr
+
+		'''
+		fname = '/extra/pob/Model_17m/' + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
+		np.savetxt(fname, trajectory)
+		'''
 
 		if params.verbose:
 
