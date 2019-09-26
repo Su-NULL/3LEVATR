@@ -234,14 +234,18 @@ class Grid:
             I_i = 0.9
 
             # Reference elevation is the average of the pre-crater grid within the crater area
-            # Creter interior weighted by 1, ejecta blanket weighted by (distance/radius)**-n, n=3
+            # Crater interior weighted by 1, ejecta blanket weighted by (distance/radius)**-n, n=3
             weights = np.copy(ones_grid)
             outside_mask = dist_from_center > radius
 
             weights[outside_mask] = (dist_from_center[outside_mask]/radius)**(-3)
+            plt.figure()
+            plt.imshow(weights.T)
+            plt.show()
             weighted_grid = current_grid*weights
 
             E_r = np.average(weighted_grid[full_crater_mask])
+            print(E_r)
 
             # Crater elevation profile
             delta_H_crater = (((dist_from_center/radius)**2)*(rim_height + depth)) - depth
@@ -1632,407 +1636,39 @@ class Model:
         resolution = params.resolution
         grid_size = params.grid_size
 
-        if params.verbose:
-            print('Grid size (meters): {}'.format(grid.grid_width))
-            print('Grid size (pixels): {}'.format(grid_old.shape))
-            print('Grid resolution (m/px): {}'.format(grid.resolution))
-            print('Total model time (Myr): {}'.format(params.model_time/(1.e6)))
-            print('Timestep (Myr): {}'.format(params.dt/(1.e6)))
-            print('Number of timesteps: {}'.format(params.nsteps))
-            if params.diffusion_on:
-                print('Grid diffusivity (m^2/yr): {}'.format(params.diffusivity))
-            print('')
-
-        if params.cratering_on:
-            if params.verbose:
-                print(
-                    '########## ----------------------------------------------------------------------- ##########')
-                print('Sampling impactor population...')
-
-            impPop = ImpactorPopulation()
-
-            d_craters, x_craters, y_craters, index_craters, t_craters, dist_secs = impPop.sample_all_craters()
-
-            gc.collect()
-
-            if params.verbose:
-                if params.secondaries_on:
-
-                    d_sec_craters = d_craters[np.where(index_craters < 1.0)]
-                    index_sec_craters = index_craters[np.where(index_craters < 1.0)]
-                    print('Primary craters')
-                    print('Total number of craters: {}'.format(len(d_craters)))
-                    print('Number of primary craters: {}'.format(len(d_craters) - len(d_sec_craters)))
-                    print('Number of secondary craters: {}'.format(len(d_sec_craters)))
-
-                else:
-                    print('Primary craters only')
-                    print('Total number of craters: {}'.format(len(d_craters)))
-                print('Smallest crater: {}'.format(np.min(d_craters)))
-                print('Largest crater: {}'.format(np.max(d_craters)))
-                print('')
-
-                if params.secondaries_on:
-                    plt.figure()
-                    plt.subplot(221)
-                    plt.hist(d_craters)
-                    plt.xlabel('Crater diameter (m)')
-                    plt.subplot(223)
-                    plt.hist(index_craters)
-                    plt.xlabel('Crater index (m)')
-                    plt.subplot(222)
-                    plt.hist(t_craters, bins=params.nsteps)
-                    plt.xlabel('Timestep')
-                    plt.subplot(224)
-                    plt.hist(dist_secs/1000.0)
-                    plt.xlabel('Secondary origination distance (km)')
-                    plt.show()
-
-                else:
-                    plt.figure()
-                    plt.subplot(121)
-                    plt.hist(d_craters)
-                    plt.xlabel('Crater diameter (m)')
-                    plt.subplot(122)
-                    plt.hist(t_craters)
-                    plt.xlabel('Timestep')
-                    plt.show()
-
-        if params.tracers_on:
-            if params.verbose:
-                print(
-                    '########## ----------------------------------------------------------------------- ##########')
-                print('Initializing tracer particles...')
-
-            n_pd = params.n_particles_per_layer
-            x_points = np.linspace(5, params.grid_size - 5, n_pd, dtype=np.int)
-            y_points = np.linspace(5, params.grid_size - 5, n_pd, dtype=np.int)
-            # Particles end at excavation depth of crater 1/4 the grid width
-            z_points = np.geomspace(1.0, (params.grid_width/4.0/1.17/10.0 + 1.0), n_pd, dtype=np.float)
-            z_points = -1.0*(z_points - 1.0)
-            z_points[0] = 0.0
-
-            if params.verbose:
-                print('Total number of particles: {}'.format(int(n_pd**3)))
-                print('Particles per layer: {}'.format(n_pd))
-                print('Min/Max depth of particles (m): {}/{}'.format(z_points[0], z_points[-1]))
-                print('')
-            XX, YY, ZZ = np.meshgrid(x_points, y_points, z_points)
-
-            tracers = []
-            for i in range(XX.shape[0]):
-                for j in range(XX.shape[1]):
-                    for k in range(XX.shape[2]):
-                        x_p0 = XX[i, j, k]
-                        y_p0 = YY[i, j, k]
-                        z_p0 = ZZ[i, j, k]
-
-                        tracer = Tracer(x_p0, y_p0, z_p0)
-                        tracers.append(tracer)
-
-        if params.verbose:
-            print(
-                '########## ----------------------------------------------------------------------- ##########')
-            print('Evolving the landscape...')
-
-        median_slope_arr = np.zeros(params.nsteps)
-        median_elev_arr = np.zeros(params.nsteps)
-
         for t in range(params.nsteps):
             np.random.seed(int((time()+t*1000 + int(sys.argv[2]))))
 
-            if params.cratering_on:
-                ##### ------------------------------------------------------------------------- #####
-                # IMPACT CRATERING
-                # Primary and secondary resolved craters at the current timestep
-                timestep_index = np.where(t_craters == t)
+            if t == 0:
+                crater_diam = 1000.0
+                crater_radius = crater_diam/2.0
+                crater_index = 1.0
 
-                current_diameters = d_craters[timestep_index]
-                current_x = x_craters[timestep_index]
-                current_y = y_craters[timestep_index]
-                current_index = index_craters[timestep_index]
+                x_crater_pix = int(grid_size/2.0)
+                y_crater_pix = int(grid_size/2.0)
 
-                index_shuf = list(range(len(current_diameters)))
-                np.random.shuffle(index_shuf)
-                current_diameters = np.array([current_diameters[j] for j in index_shuf])
-                current_x = np.array([current_x[j] for j in index_shuf])
-                current_y = np.array([current_y[j] for j in index_shuf])
-                current_index = np.array([current_index[j] for j in index_shuf])
+                grid_new = grid.add_crater(np.copy(grid_old), x_crater_pix, y_crater_pix, crater_diam, resolution, crater_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid)
 
-                # Thickness of the regolith at the current timestep
-                regolith_thickness = (body.model_avg_regolith_thickness/(body.model_avg_age**(0.5)))*(t**(0.5))
+            if t == 1:
+                crater_diam = 250.0
+                crater_radius = crater_diam/2.0
+                crater_index = 1.0
 
-                ##### ------------------------------------------------------------------------- #####
-                # Add primary and background secondary craters
-                for i in range(len(current_diameters)):
+                x_crater_pix = int(grid_size/2.0)
+                y_crater_pix = int(grid_size/2.0)
 
-                    crater_diam = current_diameters[i]
-                    crater_radius = crater_diam/2.0
-                    crater_index = current_index[i]
+                grid_new = grid.add_crater(np.copy(grid_old), x_crater_pix, y_crater_pix, crater_diam, resolution, crater_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid)
 
-                    x_crater_pix = int(current_x[i])
-                    y_crater_pix = int(current_y[i])
-
-                    grid_new = grid.add_crater(np.copy(grid_old), x_crater_pix, y_crater_pix, crater_diam, resolution, crater_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid)
-
-                    if params.tracers_on:
-                        ##### -------------------- #####
-                        # TRACERS
-                        # Effect of crater formation on tracer particles
-                        for j in range(len(tracers)):
-                            particle_position = tracers[j].current_position()
-
-                            x_p0 = particle_position[0]
-                            y_p0 = particle_position[1]
-                            z_p0 = particle_position[2]
-
-                            if ~np.isnan(x_p0) and ~np.isnan(y_p0) and ~np.isnan(z_p0):
-                                x_p0 = int(x_p0)
-                                y_p0 = int(y_p0)
-                                z_p0 = z_p0
-                                d_p0 = grid_old[x_p0, y_p0] - z_p0
-
-                                if d_p0 < 0.0:
-                                    print('PARTICLE ABOVE SURFACE - BEGINNING OF TIMESTEP')
-                                    sys.exit()
-
-                                dx = (x_p0 - x_crater_pix)*params.resolution
-                                dy = (y_p0 - y_crater_pix)*params.resolution
-
-                                if (0 <= x_crater_pix <= (params.grid_size - 1)) and (0 <= y_crater_pix <= (params.grid_size - 1)):
-                                    dz = z_p0 - grid_old[x_crater_pix, y_crater_pix]
-                                else:
-                                    dz = z_p0
-
-                                R0 = np.sqrt(dx**2 + dy**2 + dz**2)
-
-                                # If particle sufficiently close to sphere of influence, pass to tracer particle cratering method
-                                if R0 <= 2.0*params.continuous_ejecta_blanket_factor*crater_radius:
-                                    particle_position_new = tracers[j].tracer_particle_crater(x_p0, y_p0, z_p0, d_p0, dx, dy, dz, x_crater_pix, y_crater_pix, R0, crater_radius, grid_old, grid_new)
-
-                                    tracers[j].update_position(particle_position_new)
-
-                        ##### -------------------- #####
-                    ##### --------------------------------------------------------------------- #####
-                    # Update grid after adding crater
-                    grid_old = np.copy(grid_new)
-
-                ##### --------------------------------------------------------------------- #####
-                # Update grid after adding all craters
-                grid_old = np.copy(grid_new)
-
-            if params.pixel_noise_on:
-                ##### ------------------------------------------------------------------------- #####
-                # SUB-PIXEL NOISE
-
-                if params.tracers_on:
-                    ##### -------------------- #####
-                    # TRACERS
-                    # Effect of addition of sub-pixel noise on tracer particles
-
-                    for j in range(len(tracers)):
-                        particle_position = tracers[j].current_position()
-
-                        x_p0 = particle_position[0]
-                        y_p0 = particle_position[1]
-                        z_p0 = particle_position[2]
-
-                        if ~np.isnan(x_p0) and ~np.isnan(y_p0) and ~np.isnan(z_p0):
-                            x_p0 = int(x_p0)
-                            y_p0 = int(y_p0)
-                            z_p0 = z_p0
-
-                            noise = tracers[j].sample_noise_val()
-
-                            particle_position_new = tracers[j].tracer_particle_noise(x_p0, y_p0, z_p0, grid_old, noise)
-
-                            tracers[j].update_position(particle_position_new)
-                    ##### -------------------- #####
-
-            if params.diffusion_on:
-                ##### --------------------------------------------------------------------- #####
-                # DIFFUSION
-                # Compute topographic diffusion.  If you are using explicit diffusion make sure that the timestep meets the Courant stability criterion
-                if params.implicit_diffusion:
-                    grid_new = grid.implicit_diffusion2D(grid_old)
-                elif params.explicit_diffusion:
-                    grid_new = grid.explicit_diffusion2D(grid_old)
-
-                if params.tracers_on:
-                    ##### -------------------- #####
-                    # TRACERS
-                    # Effect of topographic diffusion on tracer particles
-                    for j in range(len(tracers)):
-                        particle_position = tracers[j].current_position()
-
-                        if np.isnan(particle_position[0]) or np.isnan(particle_position[1]) or np.isnan(particle_position[2]):
-                            pass
-                        else:
-                            particle_position_new = tracers[j].tracer_particle_diffusion(grid_old, grid_new, tracers[j].current_position())
-
-                            tracers[j].update_position(particle_position_new)
-                    ##### -------------------- #####
-
-                # Update grid after diffusion
-                grid_old = np.copy(grid_new)
-
-            if params.tracers_on:
-                ##### -------------------- #####
-                # TRACERS
-                # Store final tracer particle position, depth, and surface slope
-                # Compute surface slopes at all points on the grid
-                x_slope, y_slope = np.gradient(grid_old, params.resolution)
-                slope_grid = np.rad2deg(np.arctan(np.sqrt(x_slope**2 + y_slope**2)))
-
-                for j in range(len(tracers)):
-                    particle_position_final = tracers[j].current_position()
-
-                    x_final = particle_position_final[0]
-                    y_final = particle_position_final[1]
-                    z_final = particle_position_final[2]
-
-                    if np.isnan(x_final) or np.isnan(y_final) or np.isnan(z_final):
-                        depth_final = np.nan
-                        slope_final = np.nan
-                    else:
-                        x_final = int(x_final)
-                        y_final = int(y_final)
-
-                        depth_final = grid_old[x_final, y_final] - z_final
-                        slope_final = slope_grid[x_final, y_final]
-
-                        if depth_final < 0.0:
-                            print('PARTICLE ABOVE SURFACE - END OF TIMESTEP')
-                            sys.exit()
-
-                    tracers[j].update_trajectory(x_final, y_final, z_final, depth_final, slope_final)
-
-            if params.verbose:
-                progress(t, params.nsteps)
-
-                x_slope, y_slope = np.gradient(grid_old, params.resolution)
-                slope_grid = np.rad2deg(np.arctan(np.sqrt(x_slope**2 + y_slope**2)))
-                slope_grid = slope_grid[1:-1, 1:-1]
-
-                median_slope = np.median(np.absolute(slope_grid.flatten()))
-                median_slope_arr[t] = (median_slope)
-                median_elev_arr[t] = np.average(grid_old)
-
-            gc.collect()
-
-        if params.verbose:
-            progress(params.nsteps, params.nsteps)
-            print('')
-
-        gc.collect()
-
-        if params.tracers_on:
-            if params.save_trajectories:
-                # Trajectory for all particles (x, y, z, depth, slope)
-                trajectory = np.zeros((len(tracers), params.nsteps, 5))
-
-                for j in range(len(tracers)):
-                    trajectory[j, :, 0] = tracers[j].x_arr
-                    trajectory[j, :, 1] = tracers[j].y_arr
-                    trajectory[j, :, 2] = tracers[j].z_arr
-                    trajectory[j, :, 3] = tracers[j].d_arr
-                    trajectory[j, :, 4] = tracers[j].slope_arr
-
-                fname = str(params.save_dir) + str(sys.argv[1]) + '/' + str(uuid.uuid4())
-                np.save(fname, trajectory)
-
-        if params.verbose:
-
-            if params.tracers_on:
-                ls = LightSource(azdeg=270, altdeg=30.0)
-
+                slc = np.arange(params.grid_size)
                 plt.figure()
-                plt.subplot(121)
-                plt.imshow(ls.hillshade(grid_old.T, dx=params.resolution, dy=params.resolution), extent=(0, params.grid_width, 0, params.grid_width), cmap='gray')
-                plt.xlabel('Distance (m)')
-                plt.ylabel('Distance (m)')
-                plt.title('Final landscape')
-                plt.subplot(122)
-                plt.imshow(grid_old.T)
-                for j in range(len(tracers)):
-                    pos = tracers[j].current_position()
-                    plt.scatter(pos[0], pos[1], c='r', s=2)
+                plt.subplot(211)
+                plt.imshow(grid_new.T)
+                plt.subplot(212)
+                plt.plot(slc, grid_new[int(params.grid_size/2), slc])
+                plt.show()
 
-                plt.figure()
-                plt.subplot(221)
-                plt.plot(np.arange(len(median_slope_arr))*params.dt/(1.e6), median_slope_arr)
-                plt.xlabel('Time (Myr)')
-                plt.ylabel('Median slope (deg)')
-                plt.subplot(222)
-                plt.plot(np.arange(len(median_slope_arr))*params.dt/(1.e6), median_elev_arr)
-                plt.axhline(0.0, color='k', linestyle='--')
-                plt.xlabel('Time (Myr)')
-                plt.ylabel('Mean grid elevation (m)')
 
-                surf_res = []
-                lost_count = 0
-                sample_count = 0
-                sample_depth = 0.1
-
-                plt.subplot(223)
-                for j in range(len(tracers)):
-                    depth_arr = tracers[j].d_arr
-
-                    if ~np.isnan(depth_arr[-1]):
-                        if depth_arr[-1] <= params.sampling_depth:
-                            sample_count += 1
-                            surf_steps = sum(1 for d in depth_arr if d <= params.surface_depth)
-                            surf_time = surf_steps*params.dt
-                            surf_res.append(surf_time)
-
-                            plt.plot(range(params.nsteps), depth_arr)
-                    else:
-                        lost_count += 1
-                surf_res = np.array(surf_res)/(1.e9)
-                plt.subplot(224)
-                plt.hist(surf_res, bins=int(np.ceil(np.sqrt(len(surf_res)))), density=True)
-                plt.xlabel('Surface residence time (Gyr)')
-                plt.ylabel('Normalized Frequency')
-                plt.title('Residence times of tracer particles - sample depth:{} (m)'.format(params.sampling_depth))
-
-                print('Total model time: {}'.format((params.nsteps)*params.dt/(1.e9)))
-                print('Particles lost: {}'.format(lost_count))
-                print('Sampled particles: {} / {}'.format(sample_count, str(params.n_particles_per_layer**3)))
-                print('Surface residence: ', np.nanmin(surf_res), np.nanmax(surf_res))
-                print('Median slope: {} degrees'.format(median_slope))
-
-                print('')
-                runtime = time() - starttime
-                print('Runtime (min): {}'.format(runtime/60.0))
-                print('')
-
-            else:
-                ls = LightSource(azdeg=270, altdeg=30.0)
-
-                plt.figure()
-                plt.subplot(121)
-                plt.imshow(ls.hillshade(grid_old.T, dx=params.resolution, dy=params.resolution), extent=(0, params.grid_width, 0, params.grid_width), cmap='gray')
-                plt.subplot(122)
-                plt.imshow(grid_old.T)
-
-                plt.figure()
-                plt.subplot(121)
-                plt.plot(np.arange(len(median_slope_arr))*params.dt/(1.e6), median_slope_arr)
-                plt.xlabel('Time (Myr)')
-                plt.ylabel('Median slope (deg)')
-                plt.subplot(122)
-                #plt.plot(np.arange(len(median_slope_arr))*params.dt/(1.e6), median_elev_arr)
-                plt.plot(np.arange(params.nsteps), median_elev_arr)
-                plt.axhline(0.0, color='k', linestyle='--')
-                plt.xlabel('Time (Myr)')
-                plt.ylabel('Mean grid elevation (m)')
-
-                print('')
-                runtime = time() - starttime
-                print('Runtime (min): {}'.format(runtime/60.0))
-                print('')
-
-            plt.show()
+            grid_old = np.copy(grid_new)
 
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 

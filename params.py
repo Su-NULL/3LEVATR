@@ -1,8 +1,5 @@
 # Model parameters
-import numpy as np
-from glob import glob
-import matplotlib.pyplot as plt
-import sys
+#import numpy as np
 
 # Type of run
 full_run = 1
@@ -17,7 +14,7 @@ implicit_diffusion = 1
 explicit_diffusion = 0
 pixel_noise_on = 1
 periodic_particles = 1
-save_trajectories = 1
+save_trajectories = 0
 
 # Tracers on/off
 tracers_on = 1
@@ -60,4 +57,7 @@ n_particles_per_layer = 25
 sampling_depth = 0.1
 surface_depth = 0.001
 
-#nsteps = 5
+#nsteps = 1
+
+# Output directory
+save_dir = './output/'
