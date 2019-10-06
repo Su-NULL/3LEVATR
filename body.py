@@ -1,5 +1,6 @@
 # Planetary body parameters
 import numpy as np
+import matplotlib.pyplot as plt
 
 radius_body = 1.7374e6  # m
 g = 1.62
@@ -34,14 +35,14 @@ impactor_density = 2700.0  # Average impactor density at the body, kg/m^3
 regolith_density = 1500.0  # kg/m^3
 bedrock_density = 2550.0  # kg/m^3, from Wieczorek et al. 2013, GRAIL results
 regolith_strength = 1.0e3  # Pa, from Mitchell et al. 1972
-bedrock_strength = 2.0e7  # Pa, from Marchi et al. 2009
+bedrock_strength = 2.0e7  # Pa, from Marchi et al. 2009 via Asphaug et al. 1996
 
 # Average fractured depth and regolith thickness
 # Use value known over some other region (e.g. highlands)
 known_avg_fractured_depth = 10000.0
 known_avg_age = 4.5e9
 
-model_avg_regolith_thickness = 5.0
+model_avg_regolith_thickness = 5.0 # Weber, Encyclopedia of the Solar System, 3rd edition, 2014
 model_avg_age = 3.5e9
 
 # t^1/2 dependence to solve for the average thickness corresponding to your model region and age
