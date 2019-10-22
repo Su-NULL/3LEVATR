@@ -67,5 +67,4 @@ surface_depth = 0.001
 #steps = 1
 
 # Output directory
-save_dir = './output/'
-#save_dir = '/extra/pob/Model_17m/'
+save_dir = '/extra/pob/Model_17m/'

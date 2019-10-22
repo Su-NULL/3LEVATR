@@ -18,11 +18,15 @@ from scipy.optimize import minimize
 from scipy import interpolate
 import scipy
 import uuid
-import gc
+#import gc
 import scipy.stats as st
-
-
-gc.collect()
+'''
+print('numpy: ', np.__version__)
+print('sys: ', sys.version)
+print('scipy: ', scipy.__version__)
+sys.exit()
+'''
+#gc.collect()
 np.random.seed(np.random.randint(10000) + int(sys.argv[2]))
 # np.random.seed(int(sys.argv[2]))
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
@@ -187,83 +191,6 @@ class Grid:
         scaling_factor = np.sum(crater_grid[np.where(crater_grid >= 0.0)])/(np.absolute(np.sum(crater_grid[np.where(crater_grid < 0.0)])))
 
         return scaling_factor
-    '''
-    def add_crater(self, grid, x_center, y_center, diameter, resolution, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid):
-        current_grid = np.copy(grid)
-
-        grid_size = int(current_grid.shape[0])
-
-        radius = diameter/2.0
-
-        depth = (269.0/81.0)*(0.04*diameter)*primary_index
-        rim_height = 0.04*diameter*primary_index
-
-        r_ejecta = continuous_ejecta_blanket_factor*radius
-
-        dx = (X_grid - x_center)*resolution
-        dy = (Y_grid - y_center)*resolution
-
-        dist_from_center = np.hypot(dx, dy)
-
-        # Grid pixels covered by the crater
-        crater_mask = dist_from_center <= radius
-
-        # Grid pixels covered by the ejecta blanket
-        ejecta_mask = (dist_from_center > radius) & (dist_from_center <= r_ejecta)
-
-        interior_mask = np.where(dist_from_center <= radius)
-        exterior_mask = np.where(dist_from_center > radius)
-        full_crater_mask = np.where(dist_from_center <= r_ejecta)
-
-        if np.sum(crater_mask) == 0 and np.sum(ejecta_mask) == 0:
-            # Crater does not actually overlap the grid. These cases are included for completeness, simply return the pre-crater grid
-            ret_grid = np.copy(current_grid)
-
-        else:
-            I_i = 0.9
-            weights = ones_grid.copy()
-            weights[exterior_mask] = (dist_from_center[exterior_mask]/radius)**-3
-
-            weighted_grid = current_grid*weights
-
-            E_r = np.average(current_grid[full_crater_mask], weights=weights[full_crater_mask])
-
-            depth = (269.0/81.0)*(0.04*diameter)*primary_index
-            rim_height = 0.04*diameter*primary_index
-
-            # Crater elevation profile
-            delta_H_crater = (rim_height - depth) + depth*(2.0*dist_from_center/diameter)**2
-
-            # Ejecta elevation profile
-            # Divide by zero at r=0 but we don't care about that point since it's interior to the ejecta blanket
-            with np.errstate(divide='ignore'):
-                delta_H_ejecta = rim_height*((dist_from_center/radius)**-3) - (rim_height/54.0)*((dist_from_center/radius) - 1.0)
-
-            delta_E_crater = delta_H_crater + (E_r - current_grid)*(1.0 - I_i*((2.0*dist_from_center/diameter)**2))
-
-            G = delta_H_ejecta/rim_height
-            G[np.where(G > (1.0 - I_i))] = (1.0 - I_i)
-
-            delta_E_ejecta = delta_H_ejecta + G*(E_r - current_grid)
-
-            # Add crater elevations to grid
-            crater_grid = np.zeros((grid_size, grid_size))
-            crater_grid[interior_mask] = delta_E_crater[interior_mask]
-            crater_grid[(dist_from_center > radius) & (dist_from_center <= r_ejecta)] = delta_E_ejecta[(dist_from_center > radius) & (dist_from_center <= r_ejecta)]
-
-            if diameter <= (params.grid_width/3.0):
-                scaling_factor = self.calc_scale_factor(diameter, resolution, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size)
-            else:
-                scaling_factor = 1.0
-
-            crater_grid[np.where(crater_grid < 0.0)] *= scaling_factor
-
-            current_grid += crater_grid
-
-            ret_grid = np.copy(current_grid)
-
-        return ret_grid
-    '''
 
     def add_crater(self, grid, x_center, y_center, diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid):
 
@@ -559,7 +486,7 @@ class ImpactorPopulation:
         # Add a random amount to each bin so diameters are uniformly spaced within the bin (instead of all at the geometric average)
         #secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i]) + np.random.rand(num_secs_on_grid_arr[i])*(geom_factor*diam_bins[i] - diam_bins[i]) for i in range(len(diam_bins))])
         # For speedup, just use the geometric average
-        secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i], dtype=np.float) for i in range(len(diam_bins))])
+        secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i]) for i in range(len(diam_bins))])
 
         return secondary_diameters
 
@@ -598,7 +525,7 @@ class ImpactorPopulation:
         # Add a random amount to each bin so diameters are uniformly spaced within the bin (instead of all at one of the edges or the geometric average)
         #secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i]) + np.random.rand(num_secs_on_grid_arr[i])*(geom_factor*diam_bins[i] - diam_bins[i]) for i in range(len(diam_bins))])
         # For speedup, just use the geometric average
-        secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i], dtype=np.float) for i in range(len(diam_bins))])
+        secondary_diameters = np.concatenate([diam_bins[i]*np.ones(num_secs_on_grid_arr[i]) for i in range(len(diam_bins))])
 
         return secondary_diameters
 
@@ -720,7 +647,7 @@ class ImpactorPopulation:
                 theta0 = max_grid_dist[i]/r_body		# radians
                 theta_max = np.pi
 
-                theta_arr = np.linspace(theta0, theta_max, 101,  endpoint=True, dtype=np.float)		# radians
+                theta_arr = np.linspace(theta0, theta_max, 101,  endpoint=True)		# radians
                 d_theta = theta_arr[1] - theta_arr[0]
 
                 # Array of surface area in each annulus
@@ -890,12 +817,12 @@ class ImpactorPopulation:
             progress(nsteps, nsteps)
             print('')
 
-        d_craters = np.array(np.concatenate(d_craters)).astype('float')
-        x_craters = np.array(np.concatenate(x_craters)).astype('float')
-        y_craters = np.array(np.concatenate(y_craters)).astype('float')
-        index_craters = np.array(np.concatenate(index_craters)).astype('float')
+        d_craters = np.array(np.concatenate(d_craters))
+        x_craters = np.array(np.concatenate(x_craters))
+        y_craters = np.array(np.concatenate(y_craters))
+        index_craters = np.array(np.concatenate(index_craters))
         t_craters = np.array(np.concatenate(t_craters)).astype('int')
-        dist_secs = np.array(np.concatenate(dist_secs)).astype('float')
+        dist_secs = np.array(np.concatenate(dist_secs))
 
         return d_craters, x_craters, y_craters, index_craters, t_craters, dist_secs
 
@@ -999,16 +926,16 @@ class Tracer:
                 # (i-1, j+1)    (i, j+1)    (i+1, j+1)
                 # (i-1, j)      (i, j)      (i+1, j)
                 # (i-1, j-1)    (i, j-1)    (i+1, j-1)
-                delta_z_11 = float(grid_old[x_p, y_p] - grid_old[x_p-1, y_p+1])
-                delta_z_12 = float(grid_old[x_p, y_p] - grid_old[x_p, y_p+1])
-                delta_z_13 = float(grid_old[x_p, y_p] - grid_old[x_p+1, y_p+1])
-                delta_z_21 = float(grid_old[x_p, y_p] - grid_old[x_p-1, y_p])
+                delta_z_11 = grid_old[x_p, y_p] - grid_old[x_p-1, y_p+1]
+                delta_z_12 = grid_old[x_p, y_p] - grid_old[x_p, y_p+1]
+                delta_z_13 = grid_old[x_p, y_p] - grid_old[x_p+1, y_p+1]
+                delta_z_21 = grid_old[x_p, y_p] - grid_old[x_p-1, y_p]
                 # trivial, particle must move somewhere other than the current pixel
-                delta_z_22 = float(grid_old[x_p, y_p] - grid_old[x_p, y_p])
-                delta_z_23 = float(grid_old[x_p, y_p] - grid_old[x_p+1, y_p])
-                delta_z_31 = float(grid_old[x_p, y_p] - grid_old[x_p-1, y_p-1])
-                delta_z_32 = float(grid_old[x_p, y_p] - grid_old[x_p, y_p-1])
-                delta_z_33 = float(grid_old[x_p, y_p] - grid_old[x_p+1, y_p-1])
+                delta_z_22 = grid_old[x_p, y_p] - grid_old[x_p, y_p]
+                delta_z_23 = grid_old[x_p, y_p] - grid_old[x_p+1, y_p]
+                delta_z_31 = grid_old[x_p, y_p] - grid_old[x_p-1, y_p-1]
+                delta_z_32 = grid_old[x_p, y_p] - grid_old[x_p, y_p-1]
+                delta_z_33 = grid_old[x_p, y_p] - grid_old[x_p+1, y_p-1]
 
                 delta_z = np.zeros((3, 3))
                 delta_z[0, 0] = delta_z_11
@@ -1195,7 +1122,7 @@ class Tracer:
                     XX, YY = np.meshgrid(xi, yi)
                     f_surf_new = interpolate.interp2d(xi, yi, grid_new, kind='linear')
 
-                    phi0 = float(np.arctan2(dy, dx))
+                    phi0 = np.arctan2(dy, dx)
 
                     ejection_velocity_vertical = alpha/(R0**3)
 
@@ -1240,8 +1167,7 @@ class Tracer:
                             # For plotting purposes only
                             plt.plot(x_p0, z_p0, 'yX')
 
-                            t_arr = np.linspace(
-                                0.0, t_land, 100, dtype=np.float)
+                            t_arr = np.linspace(0.0, t_land, 100)
                             r_t_flight = R0 + ejection_velocity_vertical*t_arr
                             z_t_flight = z_p0 + ejection_velocity_vertical*t_arr - 0.5*g*(t_arr**2)
 
@@ -1281,7 +1207,7 @@ class Tracer:
                         theta0 = np.arccos(abs(dz)/R0)
                     elif dz > 0.0:
                         theta0 = np.pi/2.0 + np.arcsin(dz/R0)
-                    phi0 = float(np.arctan2(dy, dx))
+                    phi0 = np.arctan2(dy, dx)
 
                     R_final = np.random.uniform()*R0
 
@@ -1372,7 +1298,7 @@ class Tracer:
                     # FINAL PARTICLE POSITION DETERMINED - C3:S1
 
                     if plot_on:
-                        t_arr = np.linspace(0.0, t_flow, 100, dtype=np.float)
+                        t_arr = np.linspace(0.0, t_flow, 100)
                         R_flow = -1.0*((R0**4 + 4.0*alpha*t_arr)**(0.25))
 
                         x_flow = x_p0*np.ones(len(R_flow))
@@ -1390,7 +1316,7 @@ class Tracer:
                         theta0 = np.arccos(abs(dz)/R0)
                     elif dz > 0.0:
                         theta0 = np.pi/2.0 + np.arcsin(dz/R0)
-                    phi0 = float(np.arctan2(dy, dx))
+                    phi0 = np.arctan2(dy, dx)
 
                     # Interpolate on pre- and post-crater grid for computing ejection/landing positions
                     xi = range(grid_size)
@@ -1467,7 +1393,7 @@ class Tracer:
 
                             if plot_on:
                                 # For plotting purposes only
-                                t_arr = np.linspace(0.0, t_eject, 100, dtype=np.float)
+                                t_arr = np.linspace(0.0, t_eject, 100)
                                 R_flow = (R0**4 + 4.0*alpha*t_arr)**(0.25)
 
                                 theta_flow = np.arccos(1.0 - ((1.0-np.cos(theta0))*(R_flow/R0)))
@@ -1480,7 +1406,7 @@ class Tracer:
                                 plt.plot(x_flow, z_flow, 'r--')
                                 plt.plot(x_flow[-1], z_flow[-1], 'yX')
 
-                                t_arr = np.linspace(0.0, t_land, 100, dtype=np.float)
+                                t_arr = np.linspace(0.0, t_land, 100)
 
                                 r_flight = R_eject + ejection_velocity_vertical*t_arr
                                 z_flight = z_eject + ejection_velocity_vertical*t_arr - 0.5*g*(t_arr**2)
@@ -1510,7 +1436,7 @@ class Tracer:
 
                             if plot_on:
 
-                                t_arr = np.linspace(0.0, t_eject, 100, dtype=np.float)
+                                t_arr = np.linspace(0.0, t_eject, 100)
                                 R_flow = (R0**4 + 4.0*alpha*t_arr)**(0.25)
 
                                 theta_flow = np.arccos(1.0 - ((1.0-np.cos(theta0))*(R_flow/R0)))
@@ -1524,64 +1450,75 @@ class Tracer:
                                 plt.plot(x_flow[-1], z_flow[-1], 'cX')
                         # FINAL PARTICLE POSITION DETERMINED - C3:S2
 
-                    else:
-                        # SCENARIO 3: Subsurface transport
+                    elif t_eject <= t_flow:
+                        # SCENARIO 3: Unphysical subsurface transport to above the surface (constant alpha)
                         if print_on:
-                            print('CLASS 3 - SCENARIO 3')
+                            print('CLASS 3 - SCENARIO 3A')
+
+                        # Particle streamline reaches the surface before the flow freezes and at a radial distance of less than the transient crater radius
+                        f_surf_new = interpolate.interp2d(xi, yi, grid_new, kind='linear')
+
+                        theta_eject = np.arccos(1.0 - ((1.0-np.cos(theta0))*(R_eject/R0)))
+
+                        x_eject = int(round((R_eject*np.sin(theta_eject)*np.cos(phi0))/resolution + x_crater_pix))
+                        y_eject = int(round((R_eject*np.sin(theta_eject)*np.sin(phi0))/resolution + y_crater_pix))
+                        z_eject = -1.0*R_eject*np.cos(theta_eject)
+
+                        if (0 <= x_eject <= (grid_size-1)) and (0 <= y_eject <= (grid_size-1)):
+                            x_p = int(x_eject)
+                            y_p = int(y_eject)
+                            z_p = z_eject
+
+                            if z_p > grid_new[x_p, y_p]:
+                                z_p = grid_new[x_p, y_p]
+                                '''
+                                print('PARTICLE ABOVE SURFACE - NEW SHIT')
+                                print(x_eject, y_eject, z_eject)
+                                print(x_p, y_p, z_p)
+                                print(grid_old[x_eject, y_eject], grid_new[x_eject, y_eject])
+                                plt.figure()
+                                plt.subplot(211)
+                                plt.imshow(grid_old.T)
+                                plt.scatter(x_p0, y_p0, c='g', s=2)
+                                plt.scatter(x_crater_pix, y_crater_pix, c='b', s=2)
+                                plt.scatter(x_eject, y_eject, c='r', s=2)
+                                plt.subplot(212)
+                                plt.imshow(grid_new.T)
+                                plt.scatter(x_p0, y_p0, c='g', s=2)
+                                plt.scatter(x_crater_pix, y_crater_pix, c='b', s=2)
+                                plt.scatter(x_eject, y_eject, c='r', s=2)
+                                plt.show()
+                                sys.exit()
+                                '''
+
+                        else:
+                            if params.periodic_particles:
+                                x_p = int(np.random.randint(low=0, high=grid_size))
+                                y_p = int(np.random.randint(low=0, high=grid_size))
+                                # Assume that the surface outside the grid is zero everywhere.
+                                z_p = grid_new[x_p, y_p] - abs(z_flow)
+                                # Particle would then be buried at a depth of z_flow so place it randomly on the grid at that depth
+                            else:
+                                x_p = np.nan
+                                y_p = np.nan
+                                z_p = np.nan
+
                         # Particle moves along a streamline that does not reach the surface before the flow freezes. Or it does reach the surface but
                         # does so at a radial distance greater than the transient crater radius.  Particles at these distances are not observed to be ejected.
                         # This artifact is likely due to our use of a constant alpha, meaning that the velocity field does not decay with time.
 
+                        # FINAL PARTICLE POSITION DETERMINED - C3:S3A
+
+                    else:
+                        # Normal subsurface transport
+                        if print_on:
+                            print('CLASS 3 - SCENARIO 3B')
+
                         R_flow = (R0**4 + 4.0*alpha*t_flow)**(0.25)
-                        theta_flow = np.arccos(1.0 - ((1.0-np.cos(theta0))*(R_flow/R0)))
+                        theta_arg = 1.0 - ((1.0-np.cos(theta0))*(R_flow/R0))
 
                         try:
-                            x_flow = int(round((R_flow*np.sin(theta_flow)*np.cos(phi0))/resolution + x_crater_pix))
-                            y_flow = int(round((R_flow*np.sin(theta_flow)*np.sin(phi0))/resolution + y_crater_pix))
-                            z_flow = -1.0*R_flow*np.cos(theta_flow)
-
-                            if (0 <= x_flow <= (grid_size-1)) and (0 <= y_flow <= (grid_size-1)):
-                                # Particle flows on the grid
-                                x_p = int(x_flow)
-                                y_p = int(y_flow)
-                                z_p = z_flow
-                                # Super-surface flows - NEED TO FIX.  For now just place on the surface at the current position
-                                if z_p > grid_new[x_p, y_p]:
-                                    z_p = grid_new[x_p, y_p]
-
-                                if plot_on:
-                                    t_arr = np.linspace(0.0, t_flow, 100, dtype=np.float)
-                                    R_flow = (R0**4 + 4.0*alpha*t_arr)**(0.25)
-
-                                    theta_flow = np.arccos(1.0 - ((1.0-np.cos(theta0))*(R_flow/R0)))
-
-                                    x_flow = (R_flow*np.sin(theta_flow)*np.cos(phi0))/resolution + x_crater_pix
-                                    y_flow = (R_flow*np.sin(theta_flow)*np.sin(phi0))/resolution + y_crater_pix
-                                    z_flow = -1.0*R_flow*np.cos(theta_flow)
-
-                                    plt.plot(x_p0, z_p0, 'go', markersize=3)
-                                    plt.plot(x_flow, z_flow, 'r--')
-                                    plt.plot(x_p, z_p, 'ro', markersize=3)
-                            else:
-                                # Particle flows off the grid
-
-                                # If periodic particles, add a new particle at a random position at the same depth as the lost particle
-                                # If not, particle is lost to the model
-                                if params.periodic_particles:
-                                    x_p = int(np.random.randint(low=0, high=grid_size))
-                                    y_p = int(np.random.randint(low=0, high=grid_size))
-                                    # Assume that the surface outside the grid is zero everywhere.
-                                    z_p = grid_new[x_p, y_p] - abs(z_flow)
-                                    # Particle would then be buried at a depth of z_flow so place it randomly on the grid at that depth
-                                else:
-                                    x_p = np.nan
-                                    y_p = np.nan
-                                    z_p = np.nan
-
-                                if plot_on:
-                                    plt.plot(x_p0, z_p0, 'rX')
-                            # FINAL PARTICLE POSITION DETERMINED - C3:S3
-
+                            theta_flow = np.arccos(theta_arg)
                         except:
                             print('NAN SUBSURFACE FLOW THETA')
                             print(x_p0, y_p0, z_p0)
@@ -1590,17 +1527,53 @@ class Tracer:
                             print(R0, crater_radius)
                             print(theta0, R_flow)
                             print(1.0 - ((1.0-np.cos(theta0))*(R_flow/R0)))
+                            sys.exit()
 
+                        x_flow = int(round((R_flow*np.sin(theta_flow)*np.cos(phi0))/resolution + x_crater_pix))
+                        y_flow = int(round((R_flow*np.sin(theta_flow)*np.sin(phi0))/resolution + y_crater_pix))
+                        z_flow = -1.0*R_flow*np.cos(theta_flow)
+
+                        if (0 <= x_flow <= (grid_size-1)) and (0 <= y_flow <= (grid_size-1)):
+                            # Particle flows on the grid
+                            x_p = int(x_flow)
+                            y_p = int(y_flow)
+                            z_p = z_flow
+                            # Super-surface flows - NEED TO FIX.  For now just place on the surface at the current position
+                            if z_p > grid_new[x_p, y_p]:
+                                z_p = grid_new[x_p, y_p]
+
+                            if plot_on:
+                                t_arr = np.linspace(0.0, t_flow, 100, dtype=np.float)
+                                R_flow = (R0**4 + 4.0*alpha*t_arr)**(0.25)
+
+                                theta_flow = np.arccos(1.0 - ((1.0-np.cos(theta0))*(R_flow/R0)))
+
+                                x_flow = (R_flow*np.sin(theta_flow)*np.cos(phi0))/resolution + x_crater_pix
+                                y_flow = (R_flow*np.sin(theta_flow)*np.sin(phi0))/resolution + y_crater_pix
+                                z_flow = -1.0*R_flow*np.cos(theta_flow)
+
+                                plt.plot(x_p0, z_p0, 'go', markersize=3)
+                                plt.plot(x_flow, z_flow, 'r--')
+                                plt.plot(x_p, z_p, 'ro', markersize=3)
+                        else:
+                            # Particle flows off the grid
+
+                            # If periodic particles, add a new particle at a random position at the same depth as the lost particle
+                            # If not, particle is lost to the model
                             if params.periodic_particles:
                                 x_p = int(np.random.randint(low=0, high=grid_size))
                                 y_p = int(np.random.randint(low=0, high=grid_size))
                                 # Assume that the surface outside the grid is zero everywhere.
-                                z_p = grid_new[x_p, y_p] - d_p0
+                                z_p = grid_new[x_p, y_p] - abs(z_flow)
                                 # Particle would then be buried at a depth of z_flow so place it randomly on the grid at that depth
                             else:
                                 x_p = np.nan
                                 y_p = np.nan
                                 z_p = np.nan
+
+                            if plot_on:
+                                plt.plot(x_p0, z_p0, 'rX')
+                        # FINAL PARTICLE POSITION DETERMINED - C3:S3
 
         d_p = grid_new[int(x_p), int(y_p)] - z_p
         if d_p < 0.0:
@@ -1678,8 +1651,7 @@ class Model:
             if params.pixel_noise_on:
                 print('Pixel noise from sub-resolution craters')
             if params.tracers_on:
-                print(
-                    'Tracer particles tracked under the effects of the processes listed above')
+                print('Tracer particles tracked under the effects of the processes listed above')
             print('')
         else:
             pass
@@ -1736,7 +1708,7 @@ class Model:
                 index_craters = index_craters[max_mask]
                 t_craters = t_craters[max_mask]
 
-            gc.collect()
+            #gc.collect()
 
             if params.verbose:
                 if params.secondaries_on:
@@ -1791,7 +1763,7 @@ class Model:
             x_points = np.linspace(5, params.grid_size - 5, n_pd, dtype=np.int)
             y_points = np.linspace(5, params.grid_size - 5, n_pd, dtype=np.int)
             # Particles end at excavation depth of crater 1/4 the grid width
-            z_points = np.geomspace(1.0, (params.grid_width/4.0/1.17/10.0 + 1.0), n_pd, dtype=np.float)
+            z_points = np.geomspace(1.0, (params.grid_width/4.0/1.17/10.0 + 1.0), n_pd)
             z_points = -1.0*(z_points - 1.0)
             z_points[0] = 0.0
 
@@ -1878,7 +1850,7 @@ class Model:
                                 if d_p0 < 0.0:
                                     print('PARTICLE ABOVE SURFACE - BEGINNING OF TIMESTEP')
                                     print(x_p0, y_p0, z_p0)
-                                    print(grid[x_p0, y_p0], grid[y_p0, z_p0])
+                                    print(grid_old[x_p0, y_p0], grid_old[y_p0, x_p0])
                                     print(d_p0)
                                     sys.exit()
                                     z_p0 = grid_old[x_p0, y_p0]
@@ -2005,17 +1977,17 @@ class Model:
                 median_slope_arr[t] = (median_slope)
                 median_elev_arr[t] = np.average(grid_old)
 
-            gc.collect()
+            #gc.collect()
 
         if params.verbose:
             progress(params.nsteps, params.nsteps)
             print('')
 
-        gc.collect()
+        #gc.collect()
 
         if params.save_grid:
-            #fname = str(params.save_dir) + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
-            fname = str(params.save_dir) + 'grid_' + str(sys.argv[1]) + '_' + str(sys.argv[1]) + '.txt'
+            fname = str(params.save_dir) + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
+            #fname = str(params.save_dir) + 'grid_' + str(sys.argv[1]) + '_' + str(sys.argv[1]) + '.txt'
             np.savetxt(fname, grid_old)
 
         if params.tracers_on:
@@ -2030,8 +2002,8 @@ class Model:
                     trajectory[j, :, 3] = tracers[j].d_arr
                     trajectory[j, :, 4] = tracers[j].slope_arr
 
-                fname = str(params.save_dir) + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
-                np.savetxt(fname, trajectory)
+                fname = str(params.save_dir) + str(sys.argv[1]) + '/' + str(uuid.uuid4())
+                np.save(fname, trajectory)
 
         if params.verbose:
 
