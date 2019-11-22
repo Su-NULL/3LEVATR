@@ -17,8 +17,7 @@ velocity_probability = velocity_distribution[:, 1]
 velocity_cumulative_probability = velocity_distribution[:, 2]
 velocity_delta = velocities[1] - velocities[0]
 velocity_max = np.max(velocities)  # km/s
-velocity_max_likelihood = [float(velocities[np.argwhere(velocity_cumulative_probability == min(
-    velocity_cumulative_probability[(velocity_cumulative_probability - r) > 0]))]) for r in [0.5]][0]		# km/s
+velocity_max_likelihood = [float(velocities[np.argwhere(velocity_cumulative_probability == min(velocity_cumulative_probability[(velocity_cumulative_probability - r) > 0]))]) for r in [0.5]][0]		# km/s
 velocity_average = np.average(velocities, weights=velocity_probability)
 
 # Impact angle distribution (most likely always going to be sin(2i))
@@ -46,5 +45,6 @@ model_avg_regolith_thickness = 5.0 # Weber, Encyclopedia of the Solar System, 3r
 model_avg_age = 3.5e9
 
 # t^1/2 dependence to solve for the average thickness corresponding to your model region and age
-avg_fractured_depth = (known_avg_fractured_depth /
-                       (known_avg_age**(0.5)))*(model_avg_age**(0.5))
+avg_fractured_depth = (known_avg_fractured_depth / (known_avg_age**(0.5)))*(model_avg_age**(0.5))
+
+v_min_sec = 250.0 # m/s, minimum velocity needed to produce secondaries

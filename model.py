@@ -18,17 +18,9 @@ from scipy.optimize import minimize
 from scipy import interpolate
 import scipy
 import uuid
-#import gc
 import scipy.stats as st
-'''
-print('numpy: ', np.__version__)
-print('sys: ', sys.version)
-print('scipy: ', scipy.__version__)
-sys.exit()
-'''
-#gc.collect()
+
 np.random.seed(np.random.randint(10000) + int(sys.argv[2]))
-# np.random.seed(int(sys.argv[2]))
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 
 
@@ -42,133 +34,115 @@ class Grid:
         self.grid_width = grid_size*resolution
 
         if params.diffusion_on:
-            # Initialize parameters for grid diffusion
-            alpha_diff = diffusivity*dt/(resolution**2)
+            def tridiag(a, b, c, k1=-1, k2=0, k3=1):
+                return np.diag(a, k1) + np.diag(b, k2) + np.diag(c, k3)
 
-            # Set up matrices to solve --> A*u_n+1 = b_n
-            N = self.grid_size
-            A_interior = np.zeros((N, N))
-            A_edge = np.zeros((N, N))
+            R = 2*(resolution*resolution)/(diffusivity*dt)
 
-            for i in range(N):
-                if i == 0:
-                    A_interior[i, :] = [1.0+3.0*alpha_diff if j == 0 else (-alpha_diff) if j == 1 else 0 for j in range(N)]
-                    A_edge[i, :] = [1.0+2.0*alpha_diff if j == 0 else (-alpha_diff) if j == 1 else 0 for j in range(N)]
+            a = -1.0*np.ones(grid_size-1)
+            c = -1.0*np.ones(grid_size-1)
+            b = (R + 2.0)*np.ones(grid_size)
 
-                elif i == N-1:
-                    A_interior[i, :] = [1.0+3.0*alpha_diff if j == N - 1 else (-alpha_diff) if j == N-2 else 0 for j in range(N)]
-                    A_edge[i, :] = [1.0+2.0*alpha_diff if j == N - 1 else (-alpha_diff) if j == N-2 else 0 for j in range(N)]
+            b[0] = 1.0
+            c[0] = 0.0
 
-                else:
-                    A_interior[i, :] = [(-alpha_diff) if j == i-1 or j == i+1 else 1.0+4.0*alpha_diff if j == i else 0 for j in range(N)]
-                    A_edge[i, :] = [(-alpha_diff) if j == i-1 or j == i+1 else 1.0 + 3.0*alpha_diff if j == i else 0 for j in range(N)]
+            b[-1] = 1.0
+            a[-1] = 0.0
 
-            self.alpha_diff = alpha_diff
-            self.A_interior = A_interior
-            self.A_edge = A_edge
+            ab = np.zeros((3, grid_size-2))
+
+            A = tridiag(a,b,c)
+
+            def diagonal_form(a, upper = 1, lower= 1):
+                n = a.shape[1]
+                assert(np.all(a.shape ==(n,n)))
+
+                ab = np.zeros((2*n-1, n))
+
+                for i in range(n):
+                    ab[i,(n-1)-i:] = np.diagonal(a,(n-1)-i)
+
+                for i in range(n-1):
+                    ab[(2*n-2)-i,:i+1] = np.diagonal(a,i-(n-1))
+
+                mid_row_inx = int(ab.shape[0]/2)
+                upper_rows = [mid_row_inx - i for i in range(1, upper+1)]
+                upper_rows.reverse()
+                upper_rows.append(mid_row_inx)
+                lower_rows = [mid_row_inx + i for i in range(1, lower+1)]
+                keep_rows = upper_rows+lower_rows
+                ab = ab[keep_rows,:]
+
+                return ab
+
+            ab = diagonal_form(A)
+
+            self.R = R
+            self.ab = ab
 
     def setUpGrid(self):
         return np.zeros((self.grid_size, self.grid_size))
 
-    def implicit_diffusion2D(self, grid_old):
-        alpha_diff = self.alpha_diff
-        A_interior = self.A_interior
-        A_edge = self.A_edge
-        N = self.grid_size
+    def implicit_diffusion2D(self, topo):
+        R = self.R
+        ab = self.ab
+        grid_size = params.grid_size
 
-        itr_max = params.diff_itr_max
-        grid_inter = np.copy(grid_old)
+        topo_inter = np.copy(topo)
+        for i in range(1, grid_size-1):
+            b1 = [topo[i,j] if j==0 or j==(grid_size-1) else (topo[i,j-1] + topo[i,j+1]) + (R-2.0)*topo[i,j] for j in range(grid_size)]
 
-        itr = 0
-        while itr < itr_max:
-            #print(grid_inter[N/2, N/2])
-            # Do all rows
-            for j in range(N):
-                if j == 0:    # Top row
-                    u_row = grid_old[:, j]
+            u1 = scipy.linalg.solve_banded((1,1), np.copy(ab), b1, overwrite_ab=True, overwrite_b=True)
+            topo_inter[i,:] = u1
 
-                    u_row_below = grid_inter[:, j+1]
+        for j in range(1, grid_size-1):
+            b2 = [topo[i,j] if i==0 or i==(grid_size-1) else (topo_inter[i-1,j] + topo_inter[i+1,j]) + (R-2.0)*topo_inter[i,j] for i in range(grid_size)]
+            u2 = scipy.linalg.solve_banded((1,1), np.copy(ab), b2, overwrite_ab=True, overwrite_b=True)
 
-                    grid_inter[:, j] = scipy.linalg.solve(A_edge, u_row + alpha_diff*u_row_below)
+            topo_inter[:,j] = u2
 
-                elif j == N-1:    # Bottom rows
-                    u_row = grid_old[:, j]
+        topo_inter[0,:] = topo_inter[1,:]
+        topo_inter[-1,:] = topo_inter[-2,:]
+        topo_inter[:,0] = topo_inter[:,1]
+        topo_inter[:,-1] = topo_inter[:,-2]
 
-                    u_row_above = grid_inter[:, j-1]
+        return topo_inter
 
-                    grid_inter[:, j] = scipy.linalg.solve(A_edge, u_row + alpha_diff*u_row_above)
-
-                else:    # All other rows
-                    u_row = grid_old[:, j]
-
-                    u_row_above = grid_inter[:, j-1]
-                    u_row_below = grid_inter[:, j+1]
-
-                    grid_inter[:, j] = scipy.linalg.solve(A_interior, u_row + alpha_diff*u_row_above + alpha_diff*u_row_below)
-
-            # Do all columns
-            for i in range(N):
-                if i == 0:    # Left column
-                    u_col = grid_old[i, :]
-
-                    u_col_right = grid_inter[i+1, :]
-
-                    grid_inter[i, :] = scipy.linalg.solve(A_edge, u_col + alpha_diff*u_col_right)
-
-                elif i == N-1:    # Right column
-                    u_col = grid_old[i, :]
-
-                    u_col_left = grid_inter[i-1, :]
-
-                    grid_inter[i, :] = scipy.linalg.solve(A_edge, u_col + alpha_diff*u_col_left)
-
-                else:    # All other columns
-                    u_col = grid_old[i, :]
-
-                    u_col_left = grid_inter[i-1, :]
-                    u_col_right = grid_inter[i+1, :]
-
-                    grid_inter[i, :] = scipy.linalg.solve(A_interior, u_col + alpha_diff*u_col_left + alpha_diff*u_col_right)
-
-            itr += 1
-
-        return np.copy(grid_inter)
-
-    def explicit_diffusion2D(self, grid_old):
-             # Compute diffusion for grid using input parameters
-        grid_size = self.grid_size
-        grid_new = np.zeros((grid_size, grid_size))
-        D = params.diffusivity
-        dt = params.dt
+    def explicit_diffusion2D(self, u0):
+        # Propagate with forward-difference in time, central-difference in space
+        # Compute diffusion for grid using input parameters
         dx2 = params.dx2
         dy2 = params.dy2
+        D = params.diffusivity
+        dt = params.dt
+        u = np.copy(u0)
+        u[1:-1, 1:-1] = u0[1:-1, 1:-1] + D * dt * ( (u0[2:, 1:-1] - 2*u0[1:-1, 1:-1] + u0[:-2, 1:-1])/dx2+ (u0[1:-1, 2:] - 2*u0[1:-1, 1:-1] + u0[1:-1, :-2])/dy2 )
 
-        ind = range(0, grid_size)
-        ind_up = np.roll(ind, -1)
-        ind_down = np.roll(ind, 1)
+        u[0,:] = u[1,:]
+        u[-1,:] = u[-2,:]
+        u[:,0] = u[:,1]
+        u[:,-1] = u[:,-2]
 
-        grid_new[0:, 0:] = grid_old[0:, 0:] + D * dt * ((grid_old[ind_up, 0:] - 2.0*grid_old[0:, 0:] + grid_old[ind_down, 0:])/dx2 + (grid_old[0:, ind_up] - 2.0*grid_old[0:, 0:] + grid_old[0:, ind_down])/dy2)
+        return u
 
-        return grid_new
+    def crank_nicolson2D(self, grid_old):
+        exp_grid = self.explicit_diffusion2D(grid_old)
+        imp_grid = self.implicit_diffusion2D(grid_old)
 
-    def calc_scale_factor(self, diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size):
+        cn_grid = 0.5*exp_grid + 0.5*imp_grid
 
-        grid_size_scale = int(3.0*diameter/res)
-        if grid_size_scale > grid_size:
-            grid_size = grid_size_scale
-            X_grid, Y_grid = np.ogrid[:grid_size, :grid_size]
+        return cn_grid
 
-        x_crater = int(grid_size/2.0)
-        y_crater = int(grid_size/2.0)
+    def calc_scale_factor(self, diameter, radius, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size):
 
-        radius = diameter/2.0
+        x_crater = y_crater = grid_size/2
 
         depth = (269.0/81.0)*(0.04*diameter)*primary_index
         rim_height = 0.04*diameter*primary_index
 
         r_ejecta = continuous_ejecta_blanket_factor*radius
 
-        dist_from_center = np.hypot(np.absolute(X_grid - x_crater)*res, np.absolute(Y_grid - y_crater)*res)
+        dist_from_center = np.hypot(abs(X_grid - x_crater)*res, abs(Y_grid - y_crater)*res)
 
         # Grid pixels covered by the crater
         crater_mask = dist_from_center <= radius
@@ -188,23 +162,17 @@ class Grid:
         crater_grid[crater_mask] = delta_H_crater[crater_mask]
         crater_grid[ejecta_mask] = delta_H_ejecta[ejecta_mask]
 
-        scaling_factor = np.sum(crater_grid[np.where(crater_grid >= 0.0)])/(np.absolute(np.sum(crater_grid[np.where(crater_grid < 0.0)])))
+        scaling_factor = np.sum(crater_grid[crater_grid >= 0.0])/(abs(np.sum(crater_grid[crater_grid < 0.0])))
 
         return scaling_factor
 
-    def add_crater(self, grid, x_center, y_center, diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid):
-
-        current_grid = np.copy(grid)
-        grid_size = int(current_grid.shape[0])
+    def add_crater(self, grid, x_center, y_center, diameter, radius, res, grid_size, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid):
 
         radius = diameter/2.0
 
-        depth = (269.0/81.0)*(0.04*diameter)*primary_index
-        rim_height = 0.04*diameter*primary_index
-
         r_ejecta = continuous_ejecta_blanket_factor*radius
 
-        dist_from_center = np.hypot(np.absolute(X_grid - x_center)*res, np.absolute(Y_grid - y_center)*res)
+        dist_from_center = np.hypot(abs(X_grid - x_center)*res, abs(Y_grid - y_center)*res)
 
         # Grid pixels covered by the crater
         crater_mask = dist_from_center <= radius
@@ -212,28 +180,32 @@ class Grid:
         # Grid pixels covered by the ejecta blanket
         ejecta_mask = (dist_from_center > radius) & (dist_from_center <= r_ejecta)
 
-        full_crater_mask = dist_from_center <= r_ejecta
-
         if np.sum(crater_mask) == 0 and np.sum(ejecta_mask) == 0:
             # Crater does not actually overlap the grid. These cases are included for completeness, simply return the pre-crater grid
-            ret_grid = np.copy(current_grid)
+            pass
 
         else:
+
+            depth = (269.0/81.0)*(0.04*diameter)*primary_index
+            rim_height = 0.04*diameter*primary_index
+
+            full_crater_mask = dist_from_center <= r_ejecta
+
             # Crater somewhat overlaps the grid
             # Inheritance parameter, set as a constant, see Howard 2007, I=0 --> crater rim horizontal, I=1 --> crater rim parallel to pre-existing slope
             I_i = 0.9
 
             # Reference elevation is the average of the pre-crater grid within the crater area
             # Creter interior weighted by 1, ejecta blanket weighted by (distance/radius)**-n, n=3
-            interior_mask = np.where(dist_from_center <= radius)
-            exterior_mask = np.where(dist_from_center > radius)
+            interior_mask = dist_from_center <= radius
+            exterior_mask = dist_from_center > radius
 
-            weights = ones_grid.copy()
+            weights = np.copy(ones_grid)
             weights[exterior_mask] = (dist_from_center[exterior_mask]/radius)**-3
 
-            weighted_grid = current_grid*weights
+            weighted_grid = grid*weights
 
-            E_r = np.average(current_grid[full_crater_mask], weights=weights[full_crater_mask])
+            E_r = np.average(grid[full_crater_mask], weights=weights[full_crater_mask])
 
             # Crater elevation profile
             delta_H_crater = (((dist_from_center/radius)**2)*(rim_height + depth)) - depth
@@ -248,29 +220,24 @@ class Grid:
             min_mask = G_grid > delta_H_ejecta/rim_height
             G_grid[min_mask] = delta_H_ejecta[min_mask]/rim_height
 
-            crater_inh_profile = (E_r - current_grid)*(1.0 - (I_i*(dist_from_center/radius)**2))
-            ejecta_inh_profile = G_grid*(E_r - current_grid)
+            crater_inh_profile = (E_r - grid)*(1.0 - (I_i*(dist_from_center/radius)**2))
+            ejecta_inh_profile = G_grid*(E_r - grid)
 
-            delta_E_crater = delta_H_crater + crater_inh_profile
-            delta_E_ejecta = delta_H_ejecta + ejecta_inh_profile
+            delta_H_crater +=crater_inh_profile
+            delta_H_ejecta += ejecta_inh_profile
 
             # Add calculated elevations to the grid at the corresponding pixels
             crater_grid = np.zeros((grid_size, grid_size))
-            crater_grid[crater_mask] = delta_E_crater[crater_mask]
-            crater_grid[ejecta_mask] = delta_E_ejecta[ejecta_mask]
+            crater_grid[crater_mask] = delta_H_crater[crater_mask]
+            crater_grid[ejecta_mask] = delta_H_ejecta[ejecta_mask]
 
-            if diameter <= (params.grid_width/3.0):
-                scaling_factor = self.calc_scale_factor(diameter, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size)
-            else:
-                scaling_factor = 1.0
+            scaling_factor = [self.calc_scale_factor(diameter, radius, res, primary_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid, grid_size) if diameter <= (grid_size*res/3.0) else 1.0]
 
-            crater_grid[np.where(crater_grid < 0.0)] *= scaling_factor
+            crater_grid[crater_grid < 0.0] *= scaling_factor
 
-            current_grid += crater_grid
+            grid += crater_grid
 
-            ret_grid = np.copy(current_grid)
-
-        return ret_grid
+        return grid
 
 ######################### ---------------------------------------------------------------------------------------------------------------------------------------- #########################
 
@@ -458,7 +425,7 @@ class ImpactorPopulation:
         # grid_area is total area of the grid in meters^2
 
         R_p = D_p/2.0
-        b_cum = 4.0
+        b_cum = 3.0
 
         # Area of annulus containing the grid in km^2
         annulus_area = (np.pi*((r + max_dist_for_sec)**2 - (r - max_dist_for_sec)**2))/(1.e6)
@@ -498,7 +465,7 @@ class ImpactorPopulation:
         # grid_area is total area of the grid in meters^2
 
         R_p = D_p/2.0
-        b_cum = 4.0
+        b_cum = 3.0
 
         annulus_area = (np.pi*((continuous_ejecta_blanket_factor*R_p + max_dist_for_sec)**2 - (continuous_ejecta_blanket_factor*R_p)**2))/(1.e6)		# Area of annulus containing the grid in km^2
         c_sfd = (D_max**b_cum)/annulus_area
@@ -753,6 +720,7 @@ class ImpactorPopulation:
         X_grid, Y_grid = np.ogrid[:params.grid_size, :params.grid_size]
 
         d_min = self.calc_min_impactor(params.min_crater, body.velocity_max*1000.0, 0.0)
+
 
         diam_bins = [d_min]
         while diam_bins[-1] < body.diameter_bins_raw[-1]:
@@ -1496,8 +1464,8 @@ class Tracer:
                                 x_p = int(np.random.randint(low=0, high=grid_size))
                                 y_p = int(np.random.randint(low=0, high=grid_size))
                                 # Assume that the surface outside the grid is zero everywhere.
-                                z_p = grid_new[x_p, y_p] - abs(z_flow)
-                                # Particle would then be buried at a depth of z_flow so place it randomly on the grid at that depth
+                                z_p = grid_new[x_p, y_p]
+
                             else:
                                 x_p = np.nan
                                 y_p = np.nan
@@ -1698,23 +1666,11 @@ class Model:
 
             d_craters, x_craters, y_craters, index_craters, t_craters, dist_secs = impPop.sample_all_craters()
 
-            if params.noise_run:
-                # Remove craters larger than 34 m, which are includ
-                max_mask = np.where(d_craters < 34.0)
-
-                d_craters = d_craters[max_mask]
-                x_craters = x_craters[max_mask]
-                y_craters = y_craters[max_mask]
-                index_craters = index_craters[max_mask]
-                t_craters = t_craters[max_mask]
-
-            #gc.collect()
-
             if params.verbose:
                 if params.secondaries_on:
 
-                    d_sec_craters = d_craters[np.where(index_craters < 1.0)]
-                    index_sec_craters = index_craters[np.where(index_craters < 1.0)]
+                    d_sec_craters = d_craters[index_craters < 1.0]
+                    index_sec_craters = index_craters[index_craters < 1.0]
                     print('Primary craters')
                     print('Total number of craters: {}'.format(len(d_craters)))
                     print('Number of primary craters: {}'.format(len(d_craters) - len(d_sec_craters)))
@@ -1828,7 +1784,9 @@ class Model:
                     x_crater_pix = int(current_x[i])
                     y_crater_pix = int(current_y[i])
 
-                    grid_new = grid.add_crater(np.copy(grid_old), x_crater_pix, y_crater_pix, crater_diam, resolution, crater_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid)
+                    #grid_new = grid.add_crater(np.copy(grid_old), x_crater_pix, y_crater_pix, crater_diam, resolution, grid_size, crater_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid)
+
+                    grid_new = grid.add_crater(np.copy(grid_old), x_crater_pix, y_crater_pix, crater_diam, crater_radius, resolution, grid_size, crater_index, continuous_ejecta_blanket_factor, X_grid, Y_grid, ones_grid)
 
                     if params.tracers_on:
                         ##### -------------------- #####
@@ -1867,19 +1825,15 @@ class Model:
                                 R0 = np.sqrt(dx**2 + dy**2 + dz**2)
 
                                 # If particle sufficiently close to sphere of influence, pass to tracer particle cratering method
-                                if R0 <= 2.0*params.continuous_ejecta_blanket_factor*crater_radius:
-                                    particle_position_new = tracers[j].tracer_particle_crater(x_p0, y_p0, z_p0, d_p0, dx, dy, dz, x_crater_pix, y_crater_pix, R0, crater_radius, grid_old, grid_new)
+                                #if R0 <= 2.0*params.continuous_ejecta_blanket_factor*crater_radius:
+                                particle_position_new = tracers[j].tracer_particle_crater(x_p0, y_p0, z_p0, d_p0, dx, dy, dz, x_crater_pix, y_crater_pix, R0, crater_radius, grid_old, grid_new)
 
-                                    tracers[j].update_position(particle_position_new)
+                                tracers[j].update_position(particle_position_new)
 
                         ##### -------------------- #####
                     ##### --------------------------------------------------------------------- #####
                     # Update grid after adding crater
-                    grid_old = np.copy(grid_new)
-
-                ##### --------------------------------------------------------------------- #####
-                # Update grid after adding all craters
-                grid_old = np.copy(grid_new)
+                    np.copyto(grid_old, grid_new)
 
             if params.tracers_on:
                 ##### ------------------------------------------------------------------------- #####
@@ -1914,8 +1868,12 @@ class Model:
                 # Compute topographic diffusion.  If you are using explicit diffusion make sure that the timestep meets the Courant stability criterion
                 if params.implicit_diffusion:
                     grid_new = grid.implicit_diffusion2D(grid_old)
+
                 elif params.explicit_diffusion:
                     grid_new = grid.explicit_diffusion2D(grid_old)
+
+                elif params.crank_nicolson_diffusion:
+                    grid_new = grid.crank_nicolson2D(grid_old)
 
                 if params.tracers_on:
                     ##### -------------------- #####
@@ -1933,7 +1891,8 @@ class Model:
                     ##### -------------------- #####
 
                 # Update grid after diffusion
-                grid_old = np.copy(grid_new)
+                np.copyto(grid_old, grid_new)
+
 
             if params.tracers_on:
                 ##### -------------------- #####
@@ -1986,8 +1945,13 @@ class Model:
         #gc.collect()
 
         if params.save_grid:
-            fname = str(params.save_dir) + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
-            #fname = str(params.save_dir) + 'grid_' + str(sys.argv[1]) + '_' + str(sys.argv[1]) + '.txt'
+            if flags:
+                flags_str = '_FLAGS_' + flags[0]
+                fname = str(params.save_dir) + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + flags_str + '.txt'
+
+            else:
+                fname = str(params.save_dir) + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + '.txt'
+
             np.savetxt(fname, grid_old)
 
         if params.tracers_on:
@@ -2002,7 +1966,12 @@ class Model:
                     trajectory[j, :, 3] = tracers[j].d_arr
                     trajectory[j, :, 4] = tracers[j].slope_arr
 
-                fname = str(params.save_dir) + str(sys.argv[1]) + '/' + str(uuid.uuid4())
+                if flags:
+                    flags_str = '_FLAGS_' + flags[0]
+                    fname = str(params.save_dir) + str(sys.argv[1]) + '/' + str(uuid.uuid4()) + flags_str
+                else:
+                    fname = str(params.save_dir) + str(sys.argv[1]) + '/' + str(uuid.uuid4())
+
                 np.save(fname, trajectory)
 
         if params.verbose:
