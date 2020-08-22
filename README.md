@@ -4,7 +4,7 @@
 ### Overview
 The 3LEVaTR model simulates the surface of an airless body evolving over under the effects of macroscopic impact cratering and topographic diffusion from micrometeorite bombardment. The rate of micrometeorite diffusion is calibrated so that the roughness of a typical output synthetic landscape matches that of the real planetary body (at the same scale).
 
-![model_dtm][model_dtm.png]
+![model_dtm](model_dtm.png)
 
 ### Impact cratering 
 Impacts are randomly sampled from the inner solar system fluxes of Marchi et al. (2009). Using a Poisson random number generator, we determine all global impacts that occur during each timestep. Each impact is converted to final crater dimensions using the pi-group scaling method (Holsapple & Housen, 2007). Craters that overlap the model domain (represented as a grid of cells storing elevation at each timestep) are added as geometric elevation profiles. Off-grid impacts are monitored for secondary crater production, since large nearby impacts can produce secondary fragments that will impact the model domain. 
